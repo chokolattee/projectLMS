@@ -21,7 +21,7 @@ export default function AppTabs() {
           />
         </NativeTabs.Trigger>
 
-        {user?.role === 'program chair' || user?.role === 'admin' ? (
+        {user?.role === 'program chair' || user?.role === 'program_chair' || user?.role === 'admin' ? (
           <NativeTabs.Trigger name="chair">
             <NativeTabs.Trigger.Label>Chair Portal</NativeTabs.Trigger.Label>
             <NativeTabs.Trigger.Icon

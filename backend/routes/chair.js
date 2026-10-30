@@ -17,8 +17,8 @@ const {
 const { isAuthenticatedUser, authorizeRoles } = require('../middlewares/auth');
 
 // All chair endpoints require authentication and Program Chair or Admin role
-router.use(isAuthenticatedUser);
-router.use(authorizeRoles('program chair', 'program_chair', 'admin'));
+router.use('/chair', isAuthenticatedUser);
+router.use('/chair', authorizeRoles('program chair', 'program_chair', 'admin'));
 
 // 1. Account Lifecycle Manager
 router.get('/chair/accounts', getAccounts);
@@ -43,4 +43,3 @@ router.post('/chair/enrollment/execute', executeEnrollmentRules);
 router.get('/chair/reports', getChairReports);
 
 module.exports = router;
-

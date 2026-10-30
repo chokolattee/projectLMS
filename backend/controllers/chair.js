@@ -1,3 +1,4 @@
+const mongoose = require('mongoose');
 const User = require('../models/user');
 const Subject = require('../models/subject');
 const StudentProgress = require('../models/studentProgress');
@@ -599,7 +600,9 @@ exports.getChairReports = async (req, res) => {
     const { subjectId, yearLevel, semester, schoolYear } = req.query;
 
     const subjectFilter = {};
-    if (subjectId && subjectId !== 'all') subjectFilter._id = subjectId;
+    if (subjectId && subjectId !== 'all' && mongoose.Types.ObjectId.isValid(subjectId)) {
+      subjectFilter._id = subjectId;
+    }
     if (yearLevel && yearLevel !== 'all') subjectFilter.yearLevel = yearLevel;
     if (semester && semester !== 'all') subjectFilter.semester = semester;
     if (schoolYear && schoolYear !== 'all') subjectFilter.academicYear = schoolYear;

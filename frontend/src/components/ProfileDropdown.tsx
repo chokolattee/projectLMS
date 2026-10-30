@@ -19,11 +19,11 @@ export function ProfileDropdown() {
 
   const open = () => {
     setVisible(true);
-    Animated.timing(fadeAnim, { toValue: 1, duration: 180, useNativeDriver: true }).start();
+    Animated.timing(fadeAnim, { toValue: 1, duration: 180, useNativeDriver: Platform.OS !== 'web' }).start();
   };
 
   const close = () => {
-    Animated.timing(fadeAnim, { toValue: 0, duration: 150, useNativeDriver: true }).start(() => setVisible(false));
+    Animated.timing(fadeAnim, { toValue: 0, duration: 150, useNativeDriver: Platform.OS !== 'web' }).start(() => setVisible(false));
   };
 
   const handleLogout = () => {
@@ -74,7 +74,7 @@ export function ProfileDropdown() {
             <View style={styles.dropdownDivider} />
 
             {/* Menu Items - Strictly Role-Isolated */}
-            {user?.role === 'program chair' || user?.role === 'admin' ? (
+            {user?.role === 'program chair' || user?.role === 'program_chair' || user?.role === 'admin' ? (
               <>
                 <Pressable
                   style={({ pressed }) => [styles.menuItem, pressed && styles.menuItemPressed]}

@@ -59,7 +59,8 @@ exports.generateTopicSummary = async (req, res) => {
 // GET all subjects for current faculty (NO SEEDING)
 exports.getFacultySubjects = async (req, res) => {
   try {
-    const subjects = await Subject.find({ faculty: req.user.id }).sort({ createdAt: -1 });
+    const facultyId = req.user._id || req.user.id;
+    const subjects = await Subject.find({ faculty: { $in: [facultyId, String(facultyId)] } }).sort({ createdAt: -1 });
     const refreshed = await Promise.all(subjects.map(s => refreshSubjectPresentationUrls(s)));
     return res.status(200).json({ success: true, count: refreshed.length, data: refreshed });
   } catch (error) {
@@ -71,7 +72,7 @@ exports.getFacultySubjects = async (req, res) => {
 // GET single subject
 exports.getSubjectById = async (req, res) => {
   try {
-    const subject = await Subject.findOne({ _id: req.params.subjectId, faculty: req.user.id });
+    const subject = await Subject.findOne({ _id: req.params.subjectId, faculty: req.user._id });
     if (!subject) return res.status(404).json({ success: false, message: 'Subject not found.' });
     const professor = await User.findById(req.user.id).select('firstName lastName email').lean();
     const refreshed = await refreshSubjectPresentationUrls(subject);
@@ -87,6 +88,7 @@ exports.getSubjectProgressReport = async (req, res) => {
   try {
     const subject = await Subject.findOne({ _id: req.params.subjectId, faculty: req.user.id });
     if (!subject) return res.status(404).json({ success: false, message: 'Subject not found.' });
+    const professor = await User.findById(req.user.id).select('firstName lastName email').lean();
 
     const students = await User.find({
       role: 'student',
@@ -220,7 +222,7 @@ exports.createSubject = async (req, res) => {
       academicYear: chosenAcademicYear,
       semester: chosenSemester,
       yearLevel: chosenYearLevel,
-      faculty: req.user.id,
+      faculty: req.user._id || req.user.id,
       modules: [], // Clean start - no seeded dummy modules
     });
 

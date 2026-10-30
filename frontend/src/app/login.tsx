@@ -39,7 +39,7 @@ export default function LoginScreen() {
       setError(result.message);
     } else {
       const userRole = result.user?.role;
-      if (userRole === 'program chair' || userRole === 'admin') {
+      if (userRole === 'program chair' || userRole === 'program_chair' || userRole === 'admin') {
         router.replace('/chair/dashboard' as any);
       } else if (userRole === 'faculty') {
         router.replace('/faculty/dashboard' as any);

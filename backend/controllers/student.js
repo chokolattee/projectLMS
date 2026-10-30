@@ -14,13 +14,28 @@ exports.getStudentDashboard = async (req, res) => {
       return res.status(404).json({ success: false, message: 'Student not found.' });
     }
 
-    // Retrieve only subjects the student is enrolled in
-    const dbSubjects = await Subject.find({
-      $or: [
-        { enrolledStudents: user._id },
-        { 'enrolledStudents': req.user.id },
-      ],
-    }).populate('faculty', 'firstName lastName email').sort({ createdAt: -1 });
+    // Retrieve subjects the student is enrolled in or eligible for based on cohort
+    const enrolledCodes = (user.enrolledSubjects || []).map(s => s.code).filter(Boolean);
+    const orConditions = [
+      { enrolledStudents: user._id },
+    ];
+    if (enrolledCodes.length > 0) {
+      orConditions.push({ code: { $in: enrolledCodes } });
+    }
+    if (user.yearLevel && user.activeSemester && user.schoolYear) {
+      orConditions.push({
+        yearLevel: user.yearLevel,
+        semester: user.activeSemester,
+        academicYear: user.schoolYear,
+      });
+    }
+    if (user.role === 'admin' || user.role === 'program chair' || user.role === 'program_chair') {
+      orConditions.push({});
+    }
+
+    const dbSubjects = await Subject.find(
+      orConditions.length > 1 ? { $or: orConditions } : orConditions[0] || {}
+    ).populate('faculty', 'firstName lastName email').sort({ createdAt: -1 });
 
     // Build the enrolled subjects list:
     const enrolledSubjects = await Promise.all(dbSubjects.map(async s => {
@@ -96,16 +111,32 @@ exports.getStudentSubjectDetails = async (req, res) => {
       return res.status(404).json({ success: false, message: 'Subject not found.' });
     }
 
-    // Check enrollment: student must be enrolled in the subject before accessing coursework
-    const isEnrolled = (subject.enrolledStudents || []).some(
-      s => s.toString() === studentId.toString()
-    ) || (req.user.enrolledSubjects || []).some(s => s.code === subject.code);
+    const isOwnerOrAdmin =
+      req.user.role === 'admin' ||
+      req.user.role === 'program chair' ||
+      req.user.role === 'program_chair' ||
+      (subject.faculty && subject.faculty.toString() === studentId.toString());
+
+    const isEnrolled =
+      isOwnerOrAdmin ||
+      (subject.enrolledStudents || []).some(s => s.toString() === studentId.toString()) ||
+      (req.user.enrolledSubjects || []).some(s => s.code === subject.code) ||
+      (subject.yearLevel === req.user.yearLevel &&
+       subject.semester === req.user.activeSemester &&
+       subject.academicYear === req.user.schoolYear);
 
     if (!isEnrolled) {
       return res.status(403).json({
         success: false,
         message: 'Access Denied: You must be enrolled in this subject before accessing its curriculum. Please contact your Program Chair.',
       });
+    }
+
+    // Auto-sync bidirectional enrollment if student matches
+    if (!isOwnerOrAdmin && !(subject.enrolledStudents || []).some(s => s.toString() === studentId.toString())) {
+      if (!subject.enrolledStudents) subject.enrolledStudents = [];
+      subject.enrolledStudents.push(studentId);
+      await subject.save();
     }
 
     // Get or initialize student progress
@@ -177,7 +208,8 @@ exports.getStudentSubjectDetails = async (req, res) => {
     // Update overallProgress in DB if changed
     if (progress.overallProgressPercent !== overallProgressPercent) {
       progress.overallProgressPercent = overallProgressPercent;
-      await progress.save();
+      progress.markModified('topicProgress');
+    await progress.save();
     }
 
     // Assemble NetAcad hierarchical modules structure
@@ -271,9 +303,19 @@ exports.markTopicReviewed = async (req, res) => {
     const subject = await Subject.findById(subjectId);
     if (!subject) return res.status(404).json({ success: false, message: 'Subject not found.' });
 
-    const isEnrolled = (subject.enrolledStudents || []).some(
-      s => s.toString() === studentId.toString()
-    ) || (req.user.enrolledSubjects || []).some(s => s.code === subject.code);
+    const isOwnerOrAdmin =
+      req.user.role === 'admin' ||
+      req.user.role === 'program chair' ||
+      req.user.role === 'program_chair' ||
+      (subject.faculty && subject.faculty.toString() === studentId.toString());
+
+    const isEnrolled =
+      isOwnerOrAdmin ||
+      (subject.enrolledStudents || []).some(s => s.toString() === studentId.toString()) ||
+      (req.user.enrolledSubjects || []).some(s => s.code === subject.code) ||
+      (subject.yearLevel === req.user.yearLevel &&
+       subject.semester === req.user.activeSemester &&
+       subject.academicYear === req.user.schoolYear);
 
     if (!isEnrolled) {
       return res.status(403).json({
@@ -294,9 +336,9 @@ exports.markTopicReviewed = async (req, res) => {
 
     let topProg = progress.topicProgress.find(p => p.topicId === topicId);
     if (topProg?.quizPassed) {
-      return res.status(409).json({
-        success: false,
-        message: 'This quiz has already been passed. Proceed to the next topic.',
+      return res.status(200).json({
+        success: true,
+        message: 'This topic has already been passed.',
         data: {
           passed: true,
           quizPassed: true,
@@ -319,6 +361,8 @@ exports.markTopicReviewed = async (req, res) => {
       topProg.contentReviewed = true;
     }
 
+    progress.markModified('topicProgress');
+    progress.markModified('topicProgress');
     await progress.save();
 
     return res.status(200).json({
@@ -462,6 +506,7 @@ exports.submitTopicQuiz = async (req, res) => {
       }
     }
 
+    progress.markModified('topicProgress');
     await progress.save();
 
     return res.status(200).json({

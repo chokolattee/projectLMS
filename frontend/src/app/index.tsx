@@ -33,7 +33,7 @@ export default function WelcomeScreen() {
   const { isAuthenticated, user } = useAuth();
 
   if (isAuthenticated && user) {
-    const isChair = user.role === 'program chair' || user.role === 'admin';
+    const isChair = user.role === 'program chair' || user.role === 'program_chair' || user.role === 'admin';
     const isFaculty = user.role === 'faculty';
 
     return (

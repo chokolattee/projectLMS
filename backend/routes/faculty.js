@@ -21,11 +21,12 @@ const {
   getPresentationSignedUrl,
   streamPresentation,
 } = require('../controllers/faculty');
-const { isAuthenticatedUser } = require('../middlewares/auth');
+const { isAuthenticatedUser, authorizeRoles } = require('../middlewares/auth');
 const { presentationUpload, quizDocUpload } = require('../utils/multerS3');
 
 // All faculty endpoints require authentication
-router.use(isAuthenticatedUser);
+router.use('/faculty', isAuthenticatedUser);
+router.use('/faculty', authorizeRoles('faculty', 'admin', 'program chair', 'program_chair'));
 
 // Subjects CRUD
 router.get('/faculty/subjects', getFacultySubjects);

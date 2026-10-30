@@ -75,13 +75,10 @@ export default function AppTabs() {
               <TabButton>Home</TabButton>
             </TabTrigger>
             {isAuthenticated ? (
-              user?.role === 'program chair' || user?.role === 'admin' ? (
+              user?.role === 'program chair' || user?.role === 'program_chair' || user?.role === 'admin' ? (
                 <>
                   <TabTrigger name="chair" href={'/chair/dashboard' as any} asChild>
                     <TabButton>Chair Portal</TabButton>
-                  </TabTrigger>
-                  <TabTrigger name="faculty" href={'/faculty/dashboard' as any} asChild>
-                    <TabButton>Faculty Studio</TabButton>
                   </TabTrigger>
                 </>
               ) : user?.role === 'faculty' ? (

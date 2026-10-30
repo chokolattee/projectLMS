@@ -48,11 +48,17 @@ export default function DashboardScreen() {
 
   // Role Gate: Redirect faculty and chairs
   useEffect(() => {
-    if (!authLoading && user && user.role !== 'student') {
-      if (user.role === 'program chair' || user.role === 'program_chair' || user.role === 'admin') {
-        router.replace('/chair/dashboard' as any);
-      } else {
-        router.replace('/faculty/dashboard' as any);
+    if (!authLoading) {
+      if (!user) {
+        router.replace('/login' as any);
+        return;
+      }
+      if (user.role !== 'student') {
+        if (user.role === 'program chair' || user.role === 'program_chair' || user.role === 'admin') {
+          router.replace('/chair/dashboard' as any);
+        } else {
+          router.replace('/faculty/dashboard' as any);
+        }
       }
     }
   }, [authLoading, user]);
@@ -73,6 +79,7 @@ export default function DashboardScreen() {
   // Wayground Quiz Modal State
   const [showQuizModal, setShowQuizModal] = useState(false);
   const [markingReviewed, setMarkingReviewed] = useState(false);
+  const [mobileCurriculumOpen, setMobileCurriculumOpen] = useState(false);
   const [timeOfDay, setTimeOfDay] = useState('');
 
   useEffect(() => {
@@ -174,7 +181,7 @@ export default function DashboardScreen() {
     return res;
   };
 
-  if (loading) {
+  if (authLoading || loading) {
     return (
       <View style={styles.centered}>
         <ActivityIndicator size="large" color={COLORS.primary} />
@@ -209,6 +216,16 @@ export default function DashboardScreen() {
             <Pressable style={styles.backBtn} onPress={() => setActiveSubjectId(null)}>
               <Text style={styles.backBtnText}>← All Courses</Text>
             </Pressable>
+            {!isDesktop && (
+              <Pressable
+                style={styles.treeToggleBtn}
+                onPress={() => setMobileCurriculumOpen(prev => !prev)}
+              >
+                <Text style={styles.treeToggleBtnText}>
+                  {mobileCurriculumOpen ? '✕ Close Tree' : '☰ Modules'}
+                </Text>
+              </Pressable>
+            )}
             <View style={styles.courseTag}>
               <Text style={styles.courseTagText}>{subjectDetails.subject?.code || (subjectDetails as any).code || 'COURSE'}</Text>
             </View>
@@ -229,42 +246,44 @@ export default function DashboardScreen() {
           </View>
         </View>
 
-        <View style={styles.netacadWorkspace}>
+        <View style={[styles.netacadWorkspace, !isDesktop && { flexDirection: 'column' }]}>
           {/* Persistent Left Navigation Menu: Module Hierarchy Tree */}
-          <View style={styles.netacadSidebar}>
-            <View style={styles.sidebarHeader}>
-              <Text style={styles.sidebarHeaderTitle}>COURSE CURRICULUM</Text>
-              <Text style={styles.sidebarHeaderSub}>Sequential Mastery Track</Text>
-            </View>
+          {(isDesktop || mobileCurriculumOpen || !activeTopic) && (
+            <View style={[styles.netacadSidebar, !isDesktop && { width: '100%', maxHeight: mobileCurriculumOpen ? 340 : '100%' }]}>
+              <View style={styles.sidebarHeader}>
+                <Text style={styles.sidebarHeaderTitle}>COURSE CURRICULUM</Text>
+                <Text style={styles.sidebarHeaderSub}>Sequential Mastery Track</Text>
+              </View>
 
-            <ScrollView style={styles.sidebarScroll} showsVerticalScrollIndicator={false}>
-              {subjectDetails.modules.map(mod => (
-                <View key={mod.id} style={styles.moduleBlock}>
-                  <View style={styles.moduleHeaderRow}>
-                    <Text style={styles.moduleTitleText}>{mod.title}</Text>
-                  </View>
+              <ScrollView style={styles.sidebarScroll} showsVerticalScrollIndicator={false}>
+                {subjectDetails.modules.map(mod => (
+                  <View key={mod.id} style={styles.moduleBlock}>
+                    <View style={styles.moduleHeaderRow}>
+                      <Text style={styles.moduleTitleText}>{mod.title}</Text>
+                    </View>
 
-                  <View style={styles.topicsTree}>
-                    {mod.topics.map(top => {
-                      const isActive = activeTopic?.id === top.id;
-                      const isLocked = !top.unlocked;
-                      const isCompleted = top.quizPassed || (top.contentReviewed && (!top.quiz || top.quiz.questions.length === 0));
+                    <View style={styles.topicsTree}>
+                      {mod.topics.map(top => {
+                        const isActive = activeTopic?.id === top.id;
+                        const isLocked = !top.unlocked;
+                        const isCompleted = top.quizPassed || (top.contentReviewed && (!top.quiz || top.quiz.questions.length === 0));
 
-                      return (
-                        <Pressable
-                          key={top.id}
-                          style={[
-                            styles.topicItem,
-                            isActive && styles.topicItemActive,
-                            isLocked && styles.topicItemLocked,
-                          ]}
-                          disabled={isLocked}
-                          onPress={() => {
-                            setActiveModuleId(mod.id);
-                            setActiveTopicId(top.id);
-                            setWorkspaceTab('text');
-                          }}
-                        >
+                        return (
+                          <Pressable
+                            key={top.id}
+                            style={[
+                              styles.topicItem,
+                              isActive && styles.topicItemActive,
+                              isLocked && styles.topicItemLocked,
+                            ]}
+                            disabled={isLocked}
+                            onPress={() => {
+                              setActiveModuleId(mod.id);
+                              setActiveTopicId(top.id);
+                              setWorkspaceTab('text');
+                              if (!isDesktop) setMobileCurriculumOpen(false);
+                            }}
+                          >
                           <View style={styles.topicStatusIndicator}>
                             {isCompleted ? (
                               <View style={styles.indicatorCompleted}>
@@ -308,6 +327,7 @@ export default function DashboardScreen() {
               ))}
             </ScrollView>
           </View>
+          )}
 
           {/* Central Dominant Workspace */}
           <View style={styles.netacadMainViewport}>
@@ -993,6 +1013,19 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '700',
     color: '#334155',
+  },
+  treeToggleBtn: {
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 4,
+    borderWidth: 1,
+    borderColor: '#C0392B',
+    backgroundColor: '#FDEDEC',
+  },
+  treeToggleBtnText: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#C0392B',
   },
   courseTag: {
     backgroundColor: '#FDEDEC',

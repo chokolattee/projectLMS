@@ -69,7 +69,16 @@ export const facultyApi = {
         method: 'GET',
         headers: getHeaders(token),
       });
-      return await res.json();
+      const data = await res.json();
+      if (!res.ok) {
+        const roleHint = data.authenticatedRole ? ` Authenticated role: ${data.authenticatedRole}.` : '';
+        return { success: false, message: `${data.message || `Unable to load subjects (${res.status}).`}${roleHint}` };
+      }
+      return {
+        success: Boolean(data.success),
+        data: Array.isArray(data.data) ? data.data : undefined,
+        message: data.message,
+      };
     } catch (err) {
       return { success: false, message: 'Network error fetching subjects' };
     }
@@ -94,7 +103,15 @@ export const facultyApi = {
         headers: getHeaders(token),
         body: JSON.stringify(payload),
       });
-      return await res.json();
+      const data = await res.json();
+      if (!res.ok) {
+        return { success: false, message: data.message || `Unable to create subject (${res.status}).` };
+      }
+      return {
+        success: Boolean(data.success),
+        data: data.data,
+        message: data.message,
+      };
     } catch (err) {
       return { success: false, message: 'Network error creating subject' };
     }

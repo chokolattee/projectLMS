@@ -7,9 +7,10 @@ const {
   submitTopicQuiz,
   streamStudentPresentation,
 } = require('../controllers/student');
-const { isAuthenticatedUser } = require('../middlewares/auth');
+const { isAuthenticatedUser, authorizeRoles } = require('../middlewares/auth');
 
-router.use(isAuthenticatedUser);
+router.use('/student', isAuthenticatedUser);
+router.use('/student', authorizeRoles('student', 'admin', 'program chair', 'program_chair'));
 
 router.get('/student/dashboard', getStudentDashboard);
 router.get('/student/subjects/:subjectId', getStudentSubjectDetails);

@@ -6,6 +6,7 @@ import {
   ActivityIndicator,
   ScrollView,
   Pressable,
+  Alert,
   useWindowDimensions,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -35,7 +36,13 @@ export default function FacultyDashboardScreen() {
 
   // Role Gate: Redirect students to student dashboard
   useEffect(() => {
-    if (!authLoading && user && user.role !== 'faculty') {
+    if (authLoading) return;
+    if (!user) {
+      router.replace('/login' as any);
+      return;
+    }
+    const role = String(user.role || '').trim().toLowerCase();
+    if (role !== 'faculty' && role !== 'program chair' && role !== 'program_chair' && role !== 'admin') {
       router.replace('/student/dashboard');
     }
   }, [authLoading, user]);
@@ -46,6 +53,7 @@ export default function FacultyDashboardScreen() {
   const [activeTopicId, setActiveTopicId] = useState<string | null>(null);
 
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
   const [subjectModalVisible, setSubjectModalVisible] = useState(false);
   const [subjectModalMode, setSubjectModalMode] = useState<'create' | 'edit'>('create');
   const [progressReport, setProgressReport] = useState<SubjectProgressReport | null>(null);
@@ -53,11 +61,12 @@ export default function FacultyDashboardScreen() {
 
   // Load faculty subjects on mount
   useEffect(() => {
-    if (!authLoading) loadSubjects();
-  }, [authLoading, token]);
+    if (!authLoading && token && user?.role?.trim().toLowerCase() === 'faculty') loadSubjects();
+  }, [authLoading, token, user]);
 
   const loadSubjects = async () => {
     setLoading(true);
+    setLoadError('');
     const res = await facultyApi.getFacultySubjects(token);
     if (res.success && res.data) {
       setSubjects(res.data);
@@ -76,6 +85,8 @@ export default function FacultyDashboardScreen() {
         setActiveModuleId(null);
         setActiveTopicId(null);
       }
+    } else {
+      setLoadError(res.message || 'Unable to load faculty subjects.');
     }
     setLoading(false);
   };
@@ -108,12 +119,14 @@ export default function FacultyDashboardScreen() {
         handleSelectSubject(res.data);
         return true;
       }
+      Alert.alert('Subject could not be created', res.message || 'The server rejected the request.');
     } else if (activeSubject) {
       const res = await facultyApi.updateSubject(token, activeSubject._id, payload);
       if (res.success && res.data) {
         updateLocalSubject(res.data);
         return true;
       }
+      Alert.alert('Subject could not be updated', res.message || 'The server rejected the request.');
     }
     return false;
   };
@@ -260,7 +273,7 @@ export default function FacultyDashboardScreen() {
     setActiveSubject(updated);
   };
 
-  if (loading) {
+  if (authLoading || loading) {
     return (
       <View style={styles.centered}>
         <ActivityIndicator size="large" color={COLORS.primary} />
@@ -345,13 +358,13 @@ export default function FacultyDashboardScreen() {
         <ScrollView style={styles.centerWorkspace} contentContainerStyle={styles.centerContent} showsVerticalScrollIndicator={false}>
           {!activeSubject ? (
             <View style={styles.noDataCard}>
-              <Text style={styles.noDataTitle}>No Subjects Initialized</Text>
-              <Text style={styles.noDataSub}>Click "Initialize Subject" above to create your first curriculum track.</Text>
+              <Text style={styles.noDataTitle}>{loadError ? 'Subjects Could Not Be Loaded' : 'No Subjects Initialized'}</Text>
+              <Text style={styles.noDataSub}>{loadError || 'Your existing subjects will appear here.'}</Text>
               <Button
-                title="+ Initialize Subject"
+                title={loadError ? 'Retry Loading Subjects' : '+ Initialize Subject'}
                 variant="primary"
                 size="md"
-                onPress={() => {
+                onPress={loadError ? loadSubjects : () => {
                   setSubjectModalMode('create');
                   setSubjectModalVisible(true);
                 }}

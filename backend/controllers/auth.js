@@ -142,7 +142,25 @@ exports.loginUser = async (req, res) => {
 exports.getMe = async (req, res) => {
   try {
     const user = await User.findById(req.user.id);
-    return res.status(200).json({ success: true, data: user });
+    if (!user) return res.status(404).json({ success: false, message: 'User not found' });
+    return res.status(200).json({
+      success: true,
+      data: {
+        id: user._id,
+        _id: user._id,
+        email: user.email,
+        username: user.username,
+        firstName: user.firstName,
+        lastName: user.lastName,
+        role: user.role || 'student',
+        yearLevel: user.yearLevel || '1st Year',
+        activeSemester: user.activeSemester || '1st Semester',
+        schoolYear: user.schoolYear || '2026-2027',
+        avatar: user.avatar,
+        isVerified: user.isVerified,
+        enrolledSubjects: user.enrolledSubjects,
+      },
+    });
   } catch (error) {
     console.error('GetMe error:', error);
     return res.status(500).json({ success: false, message: 'Server Error: Could not fetch profile.' });

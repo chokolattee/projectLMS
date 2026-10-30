@@ -38,13 +38,17 @@ const ROLES = [
 ];
 
 export default function ChairDashboardScreen() {
-  const { token, user } = useAuth();
+  const { token, user, isLoading: authLoading } = useAuth();
   const { width } = useWindowDimensions();
   const isDesktop = width >= 992;
 
   // Role Gate: strictly Program Chair or Admin
   useEffect(() => {
-    if (user) {
+    if (!authLoading) {
+      if (!user) {
+        router.replace('/login' as any);
+        return;
+      }
       const r = user.role;
       if (r !== 'program chair' && r !== 'program_chair' && r !== 'admin') {
         if (r === 'faculty') {
@@ -54,7 +58,7 @@ export default function ChairDashboardScreen() {
         }
       }
     }
-  }, [user]);
+  }, [authLoading, user]);
 
   // Layout & Navigation State
   const [activeTab, setActiveTab] = useState<ChairTab>('dashboard');
@@ -136,9 +140,10 @@ export default function ChairDashboardScreen() {
     loadReports();
   }, [token]);
 
-  // Reload filtered accounts when filter values change
+  // Reload filtered accounts & reports when filter values change
   useEffect(() => {
     loadAccounts();
+    loadReports();
   }, [token, filterRole, filterSubjectId, filterYearLevel, filterSemester, filterSchoolYear]);
 
   const loadSubjects = async () => {
@@ -153,10 +158,10 @@ export default function ChairDashboardScreen() {
     const res = await chairApi.getAccounts(token, {
       search: searchTerm,
       role: filterRole,
-      subjectId: filterSubjectId,
-      yearLevel: filterYearLevel,
-      semester: filterSemester,
-      schoolYear: filterSchoolYear,
+      subjectId: filterSubjectId === 'all' ? undefined : filterSubjectId,
+      yearLevel: filterYearLevel === 'all' ? undefined : filterYearLevel,
+      semester: filterSemester === 'all' ? undefined : filterSemester,
+      schoolYear: filterSchoolYear === 'all' ? undefined : filterSchoolYear,
     });
 
     if (res.success && res.data) {
@@ -168,12 +173,22 @@ export default function ChairDashboardScreen() {
     setLoading(false);
   };
 
-  const loadReports = async () => {
+  const loadReports = async (overrides?: {
+    subjectId?: string;
+    yearLevel?: string;
+    semester?: string;
+    schoolYear?: string;
+  }) => {
+    const sid = overrides?.subjectId !== undefined ? overrides.subjectId : filterSubjectId;
+    const yl = overrides?.yearLevel !== undefined ? overrides.yearLevel : filterYearLevel;
+    const sem = overrides?.semester !== undefined ? overrides.semester : filterSemester;
+    const sy = overrides?.schoolYear !== undefined ? overrides.schoolYear : filterSchoolYear;
+
     const res = await chairApi.getChairReports(token, {
-      subjectId: filterSubjectId,
-      yearLevel: filterYearLevel,
-      semester: filterSemester,
-      schoolYear: filterSchoolYear,
+      subjectId: sid === 'all' ? undefined : sid,
+      yearLevel: yl === 'all' ? undefined : yl,
+      semester: sem === 'all' ? undefined : sem,
+      schoolYear: sy === 'all' ? undefined : sy,
     });
     if (res.success && res.data) {
       setReportsData(res.data);
@@ -398,6 +413,15 @@ export default function ChairDashboardScreen() {
     { id: 'accounts', label: 'Accounts', badge: stats.totalUsers },
     { id: 'enrollment', label: 'Enrollment' },
   ];
+
+  if (authLoading) {
+    return (
+      <View style={styles.loadingPad}>
+        <ActivityIndicator size="large" color={COLORS.primary} />
+        <Text style={styles.loadingText}>Verifying session security...</Text>
+      </View>
+    );
+  }
 
   return (
     <SafeAreaView style={styles.safeArea} edges={['top']}>
@@ -655,56 +679,58 @@ export default function ChairDashboardScreen() {
                 </View>
               </View>
 
-              {/* Reports Table */}
-              <View style={styles.table}>
-                <View style={styles.tableHeader}>
-                  <Text style={[styles.colHeader, { flex: 1.5 }]}>COURSE CODE</Text>
-                  <Text style={[styles.colHeader, { flex: 2.5 }]}>SUBJECT TITLE</Text>
-                  <Text style={[styles.colHeader, { flex: 2 }]}>INSTRUCTOR</Text>
-                  <Text style={[styles.colHeader, { flex: 1.5 }]}>COHORT</Text>
-                  <Text style={[styles.colHeader, { flex: 1.5, textAlign: 'center' }]}>ENROLLED</Text>
-                  <Text style={[styles.colHeader, { flex: 2 }]}>AVG PROGRESS</Text>
-                  <Text style={[styles.colHeader, { flex: 1.5, textAlign: 'center' }]}>COMPLETED</Text>
-                </View>
-
-                {(!reportsData?.subjectReports || reportsData.subjectReports.length === 0) ? (
-                  <View style={styles.emptyTable}>
-                    <Text style={styles.emptyTableText}>No subject reports found matching the criteria.</Text>
+              {/* Reports Table with horizontal scroll for mobile */}
+              <ScrollView horizontal showsHorizontalScrollIndicator={true} contentContainerStyle={{ minWidth: 850 }}>
+                <View style={[styles.table, { minWidth: 850 }]}>
+                  <View style={styles.tableHeader}>
+                    <Text style={[styles.colHeader, { flex: 1.5 }]}>COURSE CODE</Text>
+                    <Text style={[styles.colHeader, { flex: 2.5 }]}>SUBJECT TITLE</Text>
+                    <Text style={[styles.colHeader, { flex: 2 }]}>INSTRUCTOR</Text>
+                    <Text style={[styles.colHeader, { flex: 1.5 }]}>COHORT</Text>
+                    <Text style={[styles.colHeader, { flex: 1.5, textAlign: 'center' }]}>ENROLLED</Text>
+                    <Text style={[styles.colHeader, { flex: 2 }]}>AVG PROGRESS</Text>
+                    <Text style={[styles.colHeader, { flex: 1.5, textAlign: 'center' }]}>COMPLETED</Text>
                   </View>
-                ) : (
-                  reportsData.subjectReports.map((rep, idx) => (
-                    <View key={rep.subjectId} style={[styles.tableRow, idx % 2 === 1 && styles.tableRowAlt]}>
-                      <View style={{ flex: 1.5 }}>
-                        <Text style={styles.cellCodeText}>{rep.code}</Text>
-                      </View>
-                      <View style={{ flex: 2.5 }}>
-                        <Text style={styles.cellPrimary}>{rep.name}</Text>
-                        <Text style={styles.cellSub}>{rep.publishedTopicsCount} published topics</Text>
-                      </View>
-                      <Text style={[styles.cellText, { flex: 2 }]}>{rep.faculty}</Text>
-                      <View style={{ flex: 1.5 }}>
-                        <Text style={styles.cellCohortText}>{rep.yearLevel} • {rep.semester}</Text>
-                      </View>
-                      <View style={{ flex: 1.5, alignItems: 'center' }}>
-                        <View style={styles.enrollBadge}>
-                          <Text style={styles.enrollBadgeText}>{rep.enrolledCount}</Text>
-                        </View>
-                      </View>
-                      <View style={{ flex: 2 }}>
-                        <View style={styles.progressRow}>
-                          <View style={styles.progressBarBg}>
-                            <View style={[styles.progressBarFill, { width: `${rep.averageProgressPercent}%` }]} />
-                          </View>
-                          <Text style={styles.progressText}>{rep.averageProgressPercent}%</Text>
-                        </View>
-                      </View>
-                      <View style={{ flex: 1.5, alignItems: 'center' }}>
-                        <Text style={styles.completedCountText}>{rep.completedStudentsCount}</Text>
-                      </View>
+
+                  {(!reportsData?.subjectReports || reportsData.subjectReports.length === 0) ? (
+                    <View style={styles.emptyTable}>
+                      <Text style={styles.emptyTableText}>No subject reports found matching the criteria.</Text>
                     </View>
-                  ))
-                )}
-              </View>
+                  ) : (
+                    reportsData.subjectReports.map((rep, idx) => (
+                      <View key={rep.subjectId} style={[styles.tableRow, idx % 2 === 1 && styles.tableRowAlt]}>
+                        <View style={{ flex: 1.5 }}>
+                          <Text style={styles.cellCodeText}>{rep.code}</Text>
+                        </View>
+                        <View style={{ flex: 2.5 }}>
+                          <Text style={styles.cellPrimary}>{rep.name}</Text>
+                          <Text style={styles.cellSub}>{rep.publishedTopicsCount} published topics</Text>
+                        </View>
+                        <Text style={[styles.cellText, { flex: 2 }]}>{rep.faculty}</Text>
+                        <View style={{ flex: 1.5 }}>
+                          <Text style={styles.cellCohortText}>{rep.yearLevel} • {rep.semester}</Text>
+                        </View>
+                        <View style={{ flex: 1.5, alignItems: 'center' }}>
+                          <View style={styles.enrollBadge}>
+                            <Text style={styles.enrollBadgeText}>{rep.enrolledCount}</Text>
+                          </View>
+                        </View>
+                        <View style={{ flex: 2 }}>
+                          <View style={styles.progressRow}>
+                            <View style={styles.progressBarBg}>
+                              <View style={[styles.progressBarFill, { width: `${rep.averageProgressPercent}%` }]} />
+                            </View>
+                            <Text style={styles.progressText}>{rep.averageProgressPercent}%</Text>
+                          </View>
+                        </View>
+                        <View style={{ flex: 1.5, alignItems: 'center' }}>
+                          <Text style={styles.completedCountText}>{rep.completedStudentsCount}</Text>
+                        </View>
+                      </View>
+                    ))
+                  )}
+                </View>
+              </ScrollView>
             </View>
           )}
 
@@ -826,105 +852,107 @@ export default function ChairDashboardScreen() {
                 </View>
               </View>
 
-              {/* Accounts Data Table */}
+              {/* Accounts Data Table with horizontal scroll for mobile */}
               {loading ? (
                 <View style={styles.loadingPad}>
                   <ActivityIndicator size="large" color={COLORS.primary} />
                   <Text style={styles.loadingText}>Retrieving directory records...</Text>
                 </View>
               ) : (
-                <View style={styles.table}>
-                  <View style={styles.tableHeader}>
-                    <Text style={[styles.colHeader, { flex: 2.2 }]}>USER / IDENTITY</Text>
-                    <Text style={[styles.colHeader, { flex: 2.5 }]}>EMAIL & USERNAME</Text>
-                    <Text style={[styles.colHeader, { flex: 1.8 }]}>ROLE PRIVILEGE</Text>
-                    <Text style={[styles.colHeader, { flex: 2 }]}>ACADEMIC COHORT</Text>
-                    <Text style={[styles.colHeader, { flex: 2.5 }]}>ENROLLED SUBJECTS</Text>
-                    <Text style={[styles.colHeader, { flex: 2.5, textAlign: 'right' }]}>ACTIONS</Text>
-                  </View>
-
-                  {accounts.length === 0 ? (
-                    <View style={styles.emptyTable}>
-                      <Text style={styles.emptyTableText}>No accounts found matching the filter criteria.</Text>
+                <ScrollView horizontal showsHorizontalScrollIndicator={true} contentContainerStyle={{ minWidth: 950 }}>
+                  <View style={[styles.table, { minWidth: 950 }]}>
+                    <View style={styles.tableHeader}>
+                      <Text style={[styles.colHeader, { flex: 2.2 }]}>USER / IDENTITY</Text>
+                      <Text style={[styles.colHeader, { flex: 2.5 }]}>EMAIL & USERNAME</Text>
+                      <Text style={[styles.colHeader, { flex: 1.8 }]}>ROLE PRIVILEGE</Text>
+                      <Text style={[styles.colHeader, { flex: 2 }]}>ACADEMIC COHORT</Text>
+                      <Text style={[styles.colHeader, { flex: 2.5 }]}>ENROLLED SUBJECTS</Text>
+                      <Text style={[styles.colHeader, { flex: 2.5, textAlign: 'right' }]}>ACTIONS</Text>
                     </View>
-                  ) : (
-                    accounts.map((acc, idx) => (
-                      <View key={acc._id} style={[styles.tableRow, idx % 2 === 1 && styles.tableRowAlt]}>
-                        <View style={{ flex: 2.2 }}>
-                          <Text style={styles.cellPrimary}>{acc.firstName} {acc.lastName}</Text>
-                          <Text style={styles.cellSub}>ID: {acc._id.slice(-6).toUpperCase()}</Text>
-                        </View>
 
-                        <View style={{ flex: 2.5 }}>
-                          <Text style={styles.cellText} numberOfLines={1}>{acc.email}</Text>
-                          <Text style={styles.cellSub}>@{acc.username}</Text>
-                        </View>
+                    {accounts.length === 0 ? (
+                      <View style={styles.emptyTable}>
+                        <Text style={styles.emptyTableText}>No accounts found matching the filter criteria.</Text>
+                      </View>
+                    ) : (
+                      accounts.map((acc, idx) => (
+                        <View key={acc._id} style={[styles.tableRow, idx % 2 === 1 && styles.tableRowAlt]}>
+                          <View style={{ flex: 2.2 }}>
+                            <Text style={styles.cellPrimary}>{acc.firstName} {acc.lastName}</Text>
+                            <Text style={styles.cellSub}>ID: {acc._id.slice(-6).toUpperCase()}</Text>
+                          </View>
 
-                        <View style={{ flex: 1.8 }}>
-                          <View style={[
-                            styles.roleBadge,
-                            acc.role === 'student' ? styles.badgeStudent :
-                            acc.role === 'faculty' ? styles.badgeFaculty : styles.badgeChair
-                          ]}>
-                            <Text style={[
-                              styles.roleBadgeText,
-                              acc.role === 'student' ? styles.badgeTextStudent :
-                              acc.role === 'faculty' ? styles.badgeTextFaculty : styles.badgeTextChair
+                          <View style={{ flex: 2.5 }}>
+                            <Text style={styles.cellText} numberOfLines={1}>{acc.email}</Text>
+                            <Text style={styles.cellSub}>@{acc.username}</Text>
+                          </View>
+
+                          <View style={{ flex: 1.8 }}>
+                            <View style={[
+                              styles.roleBadge,
+                              acc.role === 'student' ? styles.badgeStudent :
+                              acc.role === 'faculty' ? styles.badgeFaculty : styles.badgeChair
                             ]}>
-                              {acc.role === 'program chair' || acc.role === 'program_chair' ? 'CHAIR' : acc.role.toUpperCase()}
-                            </Text>
+                              <Text style={[
+                                styles.roleBadgeText,
+                                acc.role === 'student' ? styles.badgeTextStudent :
+                                acc.role === 'faculty' ? styles.badgeTextFaculty : styles.badgeTextChair
+                              ]}>
+                                {acc.role === 'program chair' || acc.role === 'program_chair' ? 'CHAIR' : acc.role.toUpperCase()}
+                              </Text>
+                            </View>
+                          </View>
+
+                          <View style={{ flex: 2 }}>
+                            {acc.role === 'student' ? (
+                              <Text style={styles.cellCohortText}>
+                                {acc.yearLevel || '1st Year'} • {acc.activeSemester || '1st Sem'}
+                              </Text>
+                            ) : (
+                              <Text style={styles.cellMuted}>Academic Staff</Text>
+                            )}
+                          </View>
+
+                          {/* Enrolled Subjects List & Direct Enroll Trigger */}
+                          <View style={{ flex: 2.5 }}>
+                            {acc.role === 'student' ? (
+                              <View style={styles.enrolledListRow}>
+                                {acc.enrolledSubjects && acc.enrolledSubjects.length > 0 ? (
+                                  acc.enrolledSubjects.map((s, i) => (
+                                    <Pressable
+                                      key={i}
+                                      style={styles.enrolledChip}
+                                      onPress={() => s.id && handleUnenrollDirect(acc._id, s.id)}
+                                    >
+                                      <Text style={styles.enrolledChipText}>{s.code} ✕</Text>
+                                    </Pressable>
+                                  ))
+                                ) : (
+                                  <Text style={styles.unassignedText}>No subjects enrolled</Text>
+                                )}
+                                <Pressable style={styles.addEnrollBtn} onPress={() => handleOpenDirectEnroll(acc)}>
+                                  <Text style={styles.addEnrollText}>+ Enroll</Text>
+                                </Pressable>
+                              </View>
+                            ) : (
+                              <Text style={styles.cellMuted}>N/A (Staff)</Text>
+                            )}
+                          </View>
+
+                          {/* Actions: Edit Account / Role & Delete (NO cycle button!) */}
+                          <View style={[styles.actionsCell, { flex: 2.5 }]}>
+                            <Pressable style={styles.editBtn} onPress={() => handleOpenEditModal(acc)}>
+                              <Text style={styles.editBtnText}>Edit Role / User</Text>
+                            </Pressable>
+                            <Pressable style={styles.deleteBtn} onPress={() => handleDeleteAccount(acc)}>
+                              <Text style={styles.deleteBtnText}>Delete</Text>
+                            </Pressable>
                           </View>
                         </View>
-
-                        <View style={{ flex: 2 }}>
-                          {acc.role === 'student' ? (
-                            <Text style={styles.cellCohortText}>
-                              {acc.yearLevel || '1st Year'} • {acc.activeSemester || '1st Sem'}
-                            </Text>
-                          ) : (
-                            <Text style={styles.cellMuted}>Academic Staff</Text>
-                          )}
-                        </View>
-
-                        {/* Enrolled Subjects List & Direct Enroll Trigger */}
-                        <View style={{ flex: 2.5 }}>
-                          {acc.role === 'student' ? (
-                            <View style={styles.enrolledListRow}>
-                              {acc.enrolledSubjects && acc.enrolledSubjects.length > 0 ? (
-                                acc.enrolledSubjects.map((s, i) => (
-                                  <Pressable
-                                    key={i}
-                                    style={styles.enrolledChip}
-                                    onPress={() => s.id && handleUnenrollDirect(acc._id, s.id)}
-                                  >
-                                    <Text style={styles.enrolledChipText}>{s.code} ✕</Text>
-                                  </Pressable>
-                                ))
-                              ) : (
-                                <Text style={styles.unassignedText}>No subjects enrolled</Text>
-                              )}
-                              <Pressable style={styles.addEnrollBtn} onPress={() => handleOpenDirectEnroll(acc)}>
-                                <Text style={styles.addEnrollText}>+ Enroll</Text>
-                              </Pressable>
-                            </View>
-                          ) : (
-                            <Text style={styles.cellMuted}>N/A (Staff)</Text>
-                          )}
-                        </View>
-
-                        {/* Actions: Edit Account / Role & Delete (NO cycle button!) */}
-                        <View style={[styles.actionsCell, { flex: 2.5 }]}>
-                          <Pressable style={styles.editBtn} onPress={() => handleOpenEditModal(acc)}>
-                            <Text style={styles.editBtnText}>Edit Role / User</Text>
-                          </Pressable>
-                          <Pressable style={styles.deleteBtn} onPress={() => handleDeleteAccount(acc)}>
-                            <Text style={styles.deleteBtnText}>Delete</Text>
-                          </Pressable>
-                        </View>
-                      </View>
-                    ))
-                  )}
-                </View>
+                      ))
+                    )}
+                  </View>
+                </ScrollView>
               )}
             </View>
           )}
@@ -1416,6 +1444,8 @@ const styles = StyleSheet.create({
     borderBottomColor: '#E2E8F0',
     paddingHorizontal: 20,
     paddingVertical: 14,
+    flexWrap: 'wrap',
+    gap: 10,
   },
   topBarLeft: {
     flexDirection: 'row',
