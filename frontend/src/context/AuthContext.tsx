@@ -1,13 +1,13 @@
 import React, { createContext, useContext, useState, useCallback, useEffect, ReactNode } from 'react';
 import { Platform } from 'react-native';
-import { User, AuthState, LoginPayload, RegisterPayload, ApiResponse, DashboardData } from '@/types/auth';
-
-const API_BASE = 'http://localhost:8000/api';
+import { User, AuthState, LoginPayload, RegisterPayload, ProfileUpdatePayload, ApiResponse, DashboardData } from '@/types/auth';
+import { API_BASE, getHeaders } from '@/services/api';
 
 interface AuthContextType extends AuthState {
   login: (payload: LoginPayload) => Promise<{ success: boolean; message: string; user?: User }>;
   register: (payload: RegisterPayload) => Promise<{ success: boolean; message: string }>;
   logout: () => void;
+  updateProfile: (payload: ProfileUpdatePayload) => Promise<{ success: boolean; message: string; user?: User }>;
   fetchDashboard: () => Promise<{ success: boolean; data?: DashboardData; message?: string }>;
 }
 
@@ -155,6 +155,33 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setState({ user: null, token: null, isLoading: false, isAuthenticated: false });
   }, []);
 
+  const updateProfile = useCallback(async (payload: ProfileUpdatePayload) => {
+    if (!state.token) return { success: false, message: 'Not authenticated' };
+
+    try {
+      const response = await fetch(`${API_BASE}/user/profile`, {
+        method: 'PATCH',
+        headers: getHeaders(state.token),
+        body: JSON.stringify(payload),
+      });
+      const data: ApiResponse<User> = await response.json();
+
+      if (!response.ok || !data.success || !data.data) {
+        return { success: false, message: data.message || 'Could not update profile.' };
+      }
+
+      setState(prev => ({ ...prev, user: data.data }));
+      if (typeof window !== 'undefined') {
+        const authData = JSON.stringify({ user: data.data, token: state.token });
+        window.localStorage.setItem('projectLms.auth', authData);
+        window.sessionStorage.setItem('projectLms.auth', authData);
+      }
+      return { success: true, message: data.message || 'Profile updated successfully.', user: data.data };
+    } catch (error) {
+      return { success: false, message: 'Network error. Please check your connection.' };
+    }
+  }, [state.token]);
+
   const fetchDashboard = useCallback(async () => {
     if (!state.token) return { success: false, message: 'Not authenticated' };
     try {
@@ -176,7 +203,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [state.token]);
 
   return (
-    <AuthContext.Provider value={{ ...state, login, register, logout, fetchDashboard }}>
+    <AuthContext.Provider value={{ ...state, login, register, logout, updateProfile, fetchDashboard }}>
       {children}
     </AuthContext.Provider>
   );

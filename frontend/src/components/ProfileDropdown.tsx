@@ -7,6 +7,7 @@ import {
   Modal,
   Animated,
   Platform,
+  Image,
 } from 'react-native';
 import { router } from 'expo-router';
 import { useAuth } from '@/context/AuthContext';
@@ -35,19 +36,29 @@ export function ProfileDropdown() {
   };
 
   const handleViewProfile = () => {
-    close();
-    router.push('/student/dashboard');
+    setVisible(false);
+    router.push('/profile' as any);
   };
 
   const initials = `${user?.firstName?.[0] ?? ''}${user?.lastName?.[0] ?? ''}`.toUpperCase() || (user?.role === 'faculty' ? 'FA' : 'ST');
-  const roleLabel = user?.role === 'faculty' ? 'Faculty' : 'Student';
+  const roleLabel = user?.role === 'faculty'
+    ? 'Faculty'
+    : user?.role === 'program chair' || user?.role === 'program_chair'
+      ? 'Program Chair'
+      : user?.role === 'admin'
+        ? 'Administrator'
+        : 'Student';
 
   return (
     <>
       <Pressable style={styles.trigger} onPress={open}>
-        <View style={styles.avatar}>
-          <Text style={styles.avatarText}>{initials}</Text>
-        </View>
+        {user?.avatar ? (
+          <Image source={{ uri: user.avatar }} style={styles.avatar} />
+        ) : (
+          <View style={styles.avatar}>
+            <Text style={styles.avatarText}>{initials}</Text>
+          </View>
+        )}
         <View style={styles.nameContainer}>
           <Text style={styles.name} numberOfLines={1}>
             {user?.firstName ? `${user.firstName} ${user.lastName?.[0] || ''}.` : roleLabel}
@@ -57,13 +68,18 @@ export function ProfileDropdown() {
       </Pressable>
 
       <Modal visible={visible} transparent animationType="none" onRequestClose={close}>
-        <Pressable style={styles.backdrop} onPress={close}>
+        <View style={styles.backdrop}>
+          <Pressable style={styles.backdropPressable} onPress={close} />
           <Animated.View style={[styles.dropdown, { opacity: fadeAnim }]}>
             {/* Profile Header */}
             <View style={styles.dropdownHeader}>
-              <View style={styles.dropdownAvatar}>
-                <Text style={styles.dropdownAvatarText}>{initials}</Text>
-              </View>
+              {user?.avatar ? (
+                <Image source={{ uri: user.avatar }} style={styles.dropdownAvatar} />
+              ) : (
+                <View style={styles.dropdownAvatar}>
+                  <Text style={styles.dropdownAvatarText}>{initials}</Text>
+                </View>
+              )}
               <View style={styles.dropdownUserInfo}>
                 <Text style={styles.dropdownName}>{user?.firstName} {user?.lastName}</Text>
                 <Text style={styles.dropdownEmail} numberOfLines={1}>{user?.email}</Text>
@@ -72,6 +88,13 @@ export function ProfileDropdown() {
             </View>
 
             <View style={styles.dropdownDivider} />
+
+            <Pressable
+              style={({ pressed }) => [styles.menuItem, pressed && styles.menuItemPressed]}
+              onPress={handleViewProfile}
+            >
+              <Text style={styles.menuText}>My Profile</Text>
+            </Pressable>
 
             {/* Menu Items - Strictly Role-Isolated */}
             {user?.role === 'program chair' || user?.role === 'program_chair' || user?.role === 'admin' ? (
@@ -126,7 +149,7 @@ export function ProfileDropdown() {
               <Text style={styles.menuTextLogout}>Sign Out</Text>
             </Pressable>
           </Animated.View>
-        </Pressable>
+        </View>
       </Modal>
     </>
   );
@@ -161,10 +184,16 @@ const styles = StyleSheet.create({
     paddingTop: Platform.OS === 'web' ? 64 : 80,
     paddingRight: 16,
   },
+  backdropPressable: {
+    ...StyleSheet.absoluteFillObject,
+    zIndex: 0,
+  },
   dropdown: {
     backgroundColor: COLORS.white,
     borderRadius: 16,
     minWidth: 250,
+    position: 'relative',
+    zIndex: 2,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.15,
@@ -210,4 +239,3 @@ const styles = StyleSheet.create({
   menuText: { fontSize: 14, fontWeight: '500', color: COLORS.text },
   menuTextLogout: { fontSize: 14, fontWeight: '600', color: COLORS.error },
 });
-

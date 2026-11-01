@@ -22,29 +22,56 @@ export default function AppTabs() {
         </NativeTabs.Trigger>
 
         {user?.role === 'program chair' || user?.role === 'program_chair' || user?.role === 'admin' ? (
-          <NativeTabs.Trigger name="chair">
-            <NativeTabs.Trigger.Label>Chair Portal</NativeTabs.Trigger.Label>
-            <NativeTabs.Trigger.Icon
-              src={require('@/assets/images/tabIcons/explore.png')}
-              renderingMode="template"
-            />
-          </NativeTabs.Trigger>
+          <>
+            <NativeTabs.Trigger name="profile">
+              <NativeTabs.Trigger.Label>Profile</NativeTabs.Trigger.Label>
+              <NativeTabs.Trigger.Icon
+                src={require('@/assets/images/tabIcons/explore.png')}
+                renderingMode="template"
+              />
+            </NativeTabs.Trigger>
+            <NativeTabs.Trigger name="chair">
+              <NativeTabs.Trigger.Label>Chair Portal</NativeTabs.Trigger.Label>
+              <NativeTabs.Trigger.Icon
+                src={require('@/assets/images/tabIcons/explore.png')}
+                renderingMode="template"
+              />
+            </NativeTabs.Trigger>
+          </>
         ) : user?.role === 'faculty' ? (
-          <NativeTabs.Trigger name="faculty">
-            <NativeTabs.Trigger.Label>Faculty Dashboard</NativeTabs.Trigger.Label>
-            <NativeTabs.Trigger.Icon
-              src={require('@/assets/images/tabIcons/explore.png')}
-              renderingMode="template"
-            />
-          </NativeTabs.Trigger>
+          <>
+            <NativeTabs.Trigger name="profile">
+              <NativeTabs.Trigger.Label>Profile</NativeTabs.Trigger.Label>
+              <NativeTabs.Trigger.Icon
+                src={require('@/assets/images/tabIcons/explore.png')}
+                renderingMode="template"
+              />
+            </NativeTabs.Trigger>
+            <NativeTabs.Trigger name="faculty">
+              <NativeTabs.Trigger.Label>Faculty Dashboard</NativeTabs.Trigger.Label>
+              <NativeTabs.Trigger.Icon
+                src={require('@/assets/images/tabIcons/explore.png')}
+                renderingMode="template"
+              />
+            </NativeTabs.Trigger>
+          </>
         ) : (
-          <NativeTabs.Trigger name="student">
-            <NativeTabs.Trigger.Label>Student Dashboard</NativeTabs.Trigger.Label>
-            <NativeTabs.Trigger.Icon
-              src={require('@/assets/images/tabIcons/explore.png')}
-              renderingMode="template"
-            />
-          </NativeTabs.Trigger>
+          <>
+            <NativeTabs.Trigger name="profile">
+              <NativeTabs.Trigger.Label>Profile</NativeTabs.Trigger.Label>
+              <NativeTabs.Trigger.Icon
+                src={require('@/assets/images/tabIcons/explore.png')}
+                renderingMode="template"
+              />
+            </NativeTabs.Trigger>
+            <NativeTabs.Trigger name="student">
+              <NativeTabs.Trigger.Label>Student Dashboard</NativeTabs.Trigger.Label>
+              <NativeTabs.Trigger.Icon
+                src={require('@/assets/images/tabIcons/explore.png')}
+                renderingMode="template"
+              />
+            </NativeTabs.Trigger>
+          </>
         )}
       </NativeTabs>
     );

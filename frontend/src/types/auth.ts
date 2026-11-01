@@ -25,6 +25,14 @@ export interface User {
   enrolledSubjects: EnrolledSubject[];
 }
 
+export interface ProfileUpdatePayload {
+  email?: string;
+  username?: string;
+  firstName?: string;
+  lastName?: string;
+  avatar?: string;
+}
+
 export interface AuthState {
   user: User | null;
   token: string | null;
