@@ -1,7 +1,8 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import {
   View,
   Text,
+  Image,
   StyleSheet,
   Pressable,
   TextInput,
@@ -9,10 +10,22 @@ import {
   ActivityIndicator,
   Modal,
   Alert,
+  Animated,
+  Easing,
+  Platform,
+  AccessibilityInfo,
   useWindowDimensions,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
+import { Ionicons } from '@expo/vector-icons';
+import {
+  useFonts,
+  Outfit_400Regular,
+  Outfit_500Medium,
+  Outfit_700Bold,
+} from '@expo-google-fonts/outfit';
+import { TitanOne_400Regular } from '@expo-google-fonts/titan-one';
 import { useAuth } from '@/context/AuthContext';
 import {
   chairApi,
@@ -22,8 +35,6 @@ import {
   ChairReportsData,
   SmartEnrollmentPreview,
 } from '@/services/chairApi';
-import { COLORS } from '@/constants/colors';
-import { Button } from '@/components/ui/Button';
 
 type ChairTab = 'dashboard' | 'reports' | 'accounts' | 'enrollment';
 
@@ -32,17 +43,595 @@ const SEMESTERS = ['1st Semester', '2nd Semester', '3rd Semester'];
 const SCHOOL_YEARS = ['2025-2026', '2026-2027', '2027-2028', '2028-2029'];
 const ROLES = [
   { value: 'student', label: 'Student' },
-  { value: 'faculty', label: 'Faculty Instructor' },
-  { value: 'program_chair', label: 'Program Chair' },
-  { value: 'admin', label: 'Administrator' },
+  { value: 'faculty', label: 'Faculty' },
+  { value: 'program_chair', label: 'Program chair' },
+  { value: 'admin', label: 'Admin' },
 ];
 
+/* ------------------------------------------------------------------ */
+/*  Brand tokens (shared with the student side)                        */
+/* ------------------------------------------------------------------ */
+const C = {
+  bg: '#FDE680',
+  yellow: '#FFE97F',
+  coral: '#FF6B81',
+  coralDeep: '#D94D63',
+  pink: '#FFD1D4',
+  pinkDeep: '#E8A9AE',
+  cream: '#FFF5BA',
+  creamDeep: '#E8D77A',
+  red: '#D4381C',
+  blue: '#00A3EB',
+  blueDeep: '#0079AD',
+  ink: '#4A1A24',
+  muted: '#8F5F68',
+  paper: '#FFFBF0',
+  green: '#2FB57A',
+  greenDeep: '#1E8A5B',
+};
+const F = {
+  body: 'Outfit_400Regular',
+  medium: 'Outfit_500Medium',
+  bold: 'Outfit_700Bold',
+  display: 'TitanOne_400Regular',
+};
+const ACCENTS = [
+  { face: C.blue, deep: C.blueDeep, fg: '#FFFFFF' },
+  { face: C.coral, deep: C.coralDeep, fg: C.cream },
+  { face: C.cream, deep: C.creamDeep, fg: C.ink },
+  { face: C.pink, deep: C.pinkDeep, fg: C.ink },
+];
+
+const isChairRole = (r?: string) => r === 'program chair' || r === 'program_chair';
+const roleLabel = (r?: string) =>
+  isChairRole(r) ? 'Program chair' : r === 'admin' ? 'Administrator' : r === 'faculty' ? 'Faculty' : 'Student';
+const roleTone = (r?: string) =>
+  r === 'student' ? ACCENTS[0] : r === 'faculty' ? ACCENTS[3] : r === 'admin' ? ACCENTS[2] : ACCENTS[1];
+
+function greeting(): string {
+  const h = new Date().getHours();
+  if (h < 12) return 'Good morning';
+  if (h < 17) return 'Good afternoon';
+  return 'Good evening';
+}
+
+function confirmAction(message: string, onYes: () => void) {
+  if (Platform.OS === 'web' && typeof window !== 'undefined') {
+    if (window.confirm(message)) onYes();
+  } else {
+    Alert.alert('Please confirm', message, [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Yes, continue', style: 'destructive', onPress: onYes },
+    ]);
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/*  Small shared pieces                                                */
+/* ------------------------------------------------------------------ */
+function useBubble() {
+  const anim = useRef(new Animated.Value(0)).current;
+  const [text, setText] = useState('');
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const say = (msg: string, ms = 2600) => {
+    if (timer.current) clearTimeout(timer.current);
+    setText(msg);
+    anim.setValue(0);
+    Animated.spring(anim, { toValue: 1, friction: 5, tension: 140, useNativeDriver: true }).start();
+    timer.current = setTimeout(() => {
+      Animated.timing(anim, { toValue: 0, duration: 200, useNativeDriver: true }).start();
+    }, ms);
+  };
+  useEffect(() => () => { if (timer.current) clearTimeout(timer.current); }, []);
+  return { anim, text, say };
+}
+
+function useBob(reduce: boolean, ms = 1800) {
+  const v = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    if (reduce) return;
+    const l = Animated.loop(
+      Animated.sequence([
+        Animated.timing(v, { toValue: 1, duration: ms, easing: Easing.inOut(Easing.sin), useNativeDriver: true }),
+        Animated.timing(v, { toValue: 0, duration: ms, easing: Easing.inOut(Easing.sin), useNativeDriver: true }),
+      ])
+    );
+    l.start();
+    return () => l.stop();
+  }, [reduce, ms, v]);
+  return v;
+}
+
+function Bubble({ text, anim, style }: { text: string; anim: Animated.Value; style?: any }) {
+  return (
+    <Animated.View
+      pointerEvents="none"
+      style={[
+        s.bubble,
+        style,
+        { opacity: anim, transform: [{ scale: anim.interpolate({ inputRange: [0, 1], outputRange: [0.6, 1] }) }] },
+      ]}
+    >
+      <Text style={s.bubbleText}>{text}</Text>
+      <View style={s.bubbleTail} />
+    </Animated.View>
+  );
+}
+
+function Burst({ trigger, disabled }: { trigger: number; disabled?: boolean }) {
+  const v = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    if (!trigger || disabled) return;
+    v.setValue(0);
+    Animated.timing(v, { toValue: 1, duration: 800, easing: Easing.out(Easing.cubic), useNativeDriver: true }).start();
+  }, [trigger, disabled, v]);
+  if (disabled) return null;
+  const colors = [C.coral, C.blue, C.cream, C.pink, C.green, C.red];
+  return (
+    <View pointerEvents="none" style={{ position: 'absolute', left: '50%', top: 90, width: 0, height: 0, zIndex: 50 }}>
+      {Array.from({ length: 16 }).map((_, i) => {
+        const a = (i / 16) * Math.PI * 2;
+        const d = 80 + (i % 3) * 28;
+        return (
+          <Animated.View
+            key={i}
+            style={{
+              position: 'absolute',
+              width: 11,
+              height: 11,
+              borderRadius: i % 2 ? 6 : 3,
+              borderWidth: 2,
+              borderColor: C.ink,
+              backgroundColor: colors[i % colors.length],
+              opacity: v.interpolate({ inputRange: [0, 0.08, 0.8, 1], outputRange: [0, 1, 1, 0] }),
+              transform: [
+                { translateX: v.interpolate({ inputRange: [0, 1], outputRange: [0, Math.cos(a) * d] }) },
+                { translateY: v.interpolate({ inputRange: [0, 1], outputRange: [0, Math.sin(a) * d + 30] }) },
+                { rotate: v.interpolate({ inputRange: [0, 1], outputRange: ['0deg', `${(i % 2 ? 1 : -1) * 220}deg`] }) },
+                { scale: v.interpolate({ inputRange: [0, 0.2, 1], outputRange: [0.2, 1.2, 0.8] }) },
+              ],
+            }}
+          />
+        );
+      })}
+    </View>
+  );
+}
+
+/** Key-style button that sinks when pressed. */
+function Chunky({
+  children, onPress, face, shadow, radius = 16, depth = 5, style, faceStyle, disabled, held,
+}: {
+  children: React.ReactNode;
+  onPress?: () => void;
+  face: string;
+  shadow: string;
+  radius?: number;
+  depth?: number;
+  style?: any;
+  faceStyle?: any;
+  disabled?: boolean;
+  held?: boolean;
+}) {
+  const p = useRef(new Animated.Value(held ? 1 : 0)).current;
+  const heldRef = useRef(!!held);
+  useEffect(() => {
+    heldRef.current = !!held;
+    Animated.spring(p, { toValue: held ? 1 : 0, friction: 6, tension: 120, useNativeDriver: true }).start();
+  }, [held, p]);
+  const rest = () => Animated.spring(p, { toValue: heldRef.current ? 1 : 0, friction: 5, useNativeDriver: true }).start();
+  return (
+    <Pressable
+      accessibilityRole="button"
+      disabled={disabled}
+      onPress={onPress}
+      onPressIn={() => Animated.timing(p, { toValue: 1, duration: 70, useNativeDriver: true }).start()}
+      onPressOut={rest}
+      style={[{ paddingBottom: depth, opacity: disabled ? 0.55 : 1 }, style]}
+    >
+      <View
+        style={{
+          position: 'absolute', left: 0, right: 0, top: depth, bottom: 0,
+          borderRadius: radius, backgroundColor: shadow, borderWidth: 2.5, borderColor: C.ink,
+        }}
+      />
+      <Animated.View
+        style={[
+          {
+            backgroundColor: face, borderRadius: radius, borderWidth: 2.5, borderColor: C.ink,
+            transform: [{ translateY: p.interpolate({ inputRange: [0, 1], outputRange: [0, depth] }) }],
+          },
+          faceStyle,
+        ]}
+      >
+        {children}
+      </Animated.View>
+    </Pressable>
+  );
+}
+
+type Tone = 'coral' | 'blue' | 'paper' | 'green' | 'red';
+function Btn({
+  label, onPress, tone = 'coral', loading, disabled, icon, small,
+}: {
+  label: string;
+  onPress: () => void;
+  tone?: Tone;
+  loading?: boolean;
+  disabled?: boolean;
+  icon?: keyof typeof Ionicons.glyphMap;
+  small?: boolean;
+}) {
+  const t = {
+    coral: { face: C.coral, shadow: C.coralDeep, text: C.cream },
+    blue: { face: C.blue, shadow: C.blueDeep, text: '#FFFFFF' },
+    paper: { face: C.paper, shadow: C.pinkDeep, text: C.ink },
+    green: { face: C.green, shadow: C.greenDeep, text: '#FFFFFF' },
+    red: { face: C.red, shadow: '#8E2410', text: '#FFFFFF' },
+  }[tone];
+  return (
+    <Chunky
+      face={t.face}
+      shadow={t.shadow}
+      radius={small ? 12 : 16}
+      depth={small ? 4 : 5}
+      onPress={onPress}
+      disabled={disabled || loading}
+      faceStyle={small ? s.btnFaceSm : s.btnFace}
+    >
+      {loading ? (
+        <ActivityIndicator color={t.text} />
+      ) : (
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 7 }}>
+          {icon ? <Ionicons name={icon} size={small ? 14 : 18} color={t.text} /> : null}
+          <Text style={[small ? s.btnTextSm : s.btnText, { color: t.text }]}>{label}</Text>
+        </View>
+      )}
+    </Chunky>
+  );
+}
+
+function CountUp({ to, style }: { to: number; style?: any }) {
+  const v = useRef(new Animated.Value(0)).current;
+  const [shown, setShown] = useState('0');
+  useEffect(() => {
+    v.setValue(0);
+    const id = v.addListener(({ value }) => setShown(Math.round(value).toString()));
+    Animated.timing(v, { toValue: to, duration: 900, easing: Easing.out(Easing.cubic), useNativeDriver: false }).start();
+    return () => v.removeListener(id);
+  }, [to, v]);
+  return <Text style={style}>{shown}</Text>;
+}
+
+/** Pill chip used for every filter / option group. */
+function Chip({
+  label, active, onPress, tone = 'blue',
+}: { label: string; active: boolean; onPress: () => void; tone?: 'blue' | 'coral' }) {
+  const sc = useRef(new Animated.Value(1)).current;
+  useEffect(() => {
+    if (!active) return;
+    sc.setValue(0.9);
+    Animated.spring(sc, { toValue: 1, friction: 3, tension: 160, useNativeDriver: true }).start();
+  }, [active, sc]);
+  const on = tone === 'blue' ? C.blue : C.coral;
+  return (
+    <Animated.View style={{ transform: [{ scale: sc }] }}>
+      <Pressable onPress={onPress} accessibilityRole="button" style={[s.chip, active && { backgroundColor: on }]}>
+        {active ? <Ionicons name="checkmark" size={12} color="#FFFFFF" /> : null}
+        <Text style={[s.chipText, active && { color: '#FFFFFF' }]}>{label}</Text>
+      </Pressable>
+    </Animated.View>
+  );
+}
+
+function Avatar({ first, last, size = 44, tone }: { first?: string; last?: string; size?: number; tone: typeof ACCENTS[number] }) {
+  return (
+    <View style={[s.avatar, { width: size, height: size, borderRadius: size / 2, backgroundColor: tone.face }]}>
+      <Text style={[s.avatarText, { fontSize: size * 0.38, color: tone.fg }]}>
+        {(first?.[0] ?? '') + (last?.[0] ?? '')}
+      </Text>
+    </View>
+  );
+}
+
+/** Animated bar that fills from 0 when it mounts. */
+function GrowBar({ pct, color = C.coral }: { pct: number; color?: string }) {
+  const v = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    v.setValue(0);
+    Animated.timing(v, { toValue: Math.max(0, Math.min(100, pct)), duration: 900, delay: 150, easing: Easing.out(Easing.cubic), useNativeDriver: false }).start();
+  }, [pct, v]);
+  return (
+    <View style={s.barTrack}>
+      <Animated.View
+        style={{ height: '100%', backgroundColor: color, width: v.interpolate({ inputRange: [0, 100], outputRange: ['0%', '100%'] }) }}
+      />
+    </View>
+  );
+}
+
+/** Sticker stat: pops in, squishes and makes the mascot talk when tapped. */
+function StatSticker({
+  label, icon, accent, rot, radius = 20, delay = 0, value, onTap,
+}: {
+  label: string;
+  icon: keyof typeof Ionicons.glyphMap;
+  accent: typeof ACCENTS[number];
+  rot: number;
+  radius?: number;
+  delay?: number;
+  value: number;
+  onTap: () => void;
+}) {
+  const sq = useRef(new Animated.Value(0)).current;
+  const enter = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    Animated.spring(enter, { toValue: 1, delay, friction: 5, tension: 90, useNativeDriver: true }).start();
+  }, [delay, enter]);
+  const tap = () => {
+    sq.setValue(0);
+    Animated.sequence([
+      Animated.timing(sq, { toValue: 1, duration: 90, useNativeDriver: true }),
+      Animated.spring(sq, { toValue: 0, friction: 3, tension: 130, useNativeDriver: true }),
+    ]).start();
+    onTap();
+  };
+  return (
+    <Animated.View
+      style={{
+        flexGrow: 1, flexBasis: 150, opacity: enter,
+        transform: [
+          { scale: enter.interpolate({ inputRange: [0, 1], outputRange: [0.5, 1] }) },
+          { rotate: enter.interpolate({ inputRange: [0, 1], outputRange: [`${rot * 6}deg`, `${rot}deg`] }) },
+        ],
+      }}
+    >
+      <Animated.View
+        style={{
+          transform: [
+            { scaleX: sq.interpolate({ inputRange: [0, 1], outputRange: [1, 1.08] }) },
+            { scaleY: sq.interpolate({ inputRange: [0, 1], outputRange: [1, 0.9] }) },
+          ],
+        }}
+      >
+        <Chunky face={accent.face} shadow={accent.deep} radius={radius} depth={6} onPress={tap} faceStyle={{ padding: 16 }}>
+          <View style={s.statIcon}>
+            <Ionicons name={icon} size={16} color={C.ink} />
+          </View>
+          <CountUp to={value} style={[s.statValue, { color: accent.fg }]} />
+          <Text style={[s.statLabel, { color: accent.fg }]}>{label}</Text>
+        </Chunky>
+      </Animated.View>
+    </Animated.View>
+  );
+}
+
+/** Folder card for each subject: tab, peeking sheet that lifts on hover/press. */
+function FolderCard({
+  subject, accent, tilt, width, onManage,
+}: {
+  subject: ChairSubject;
+  accent: typeof ACCENTS[number];
+  tilt: number;
+  width: any;
+  onManage: () => void;
+}) {
+  const press = useRef(new Animated.Value(0)).current;
+  const lift = useRef(new Animated.Value(0)).current;
+  const sheetTo = (v: number) => Animated.spring(lift, { toValue: v, friction: 6, tension: 120, useNativeDriver: true }).start();
+  const DEPTH = 7;
+  return (
+    <Pressable
+      accessibilityRole="button"
+      onPress={onManage}
+      onPressIn={() => {
+        Animated.timing(press, { toValue: 1, duration: 70, useNativeDriver: true }).start();
+        sheetTo(1);
+      }}
+      onPressOut={() => {
+        Animated.spring(press, { toValue: 0, friction: 5, useNativeDriver: true }).start();
+        sheetTo(0);
+      }}
+      {...({ onHoverIn: () => sheetTo(1), onHoverOut: () => sheetTo(0) } as any)}
+      style={{ width, paddingBottom: DEPTH, transform: [{ rotate: `${tilt}deg` }] }}
+    >
+      <View style={[s.folderShadow, { backgroundColor: accent.deep, bottom: 0, top: 36 + DEPTH }]} />
+      <Animated.View style={{ transform: [{ translateY: press.interpolate({ inputRange: [0, 1], outputRange: [0, DEPTH] }) }] }}>
+        <Animated.View
+          pointerEvents="none"
+          style={[s.folderSheet, { transform: [{ translateY: lift.interpolate({ inputRange: [0, 1], outputRange: [0, -10] }) }] }]}
+        >
+          <View style={s.sheetLine} />
+          <View style={[s.sheetLine, { width: '60%' }]} />
+        </Animated.View>
+
+        <View style={[s.folderTab, { backgroundColor: accent.face }]}>
+          <Ionicons name="folder-open" size={15} color={accent.fg} />
+          <Text style={[s.folderTabText, { color: accent.fg }]} numberOfLines={1}>{subject.code}</Text>
+        </View>
+
+        <View style={[s.folderBody, { backgroundColor: accent.face }]}>
+          <View style={s.folderLabel}>
+            <View style={{ flex: 1 }}>
+              <Text style={s.courseTitle} numberOfLines={2}>{subject.name}</Text>
+              <View style={{ gap: 5, marginTop: 8 }}>
+                <View style={s.infoLine}>
+                  <Ionicons name="person-outline" size={14} color={C.muted} />
+                  <Text style={s.courseMeta} numberOfLines={1}>{subject.facultyName || 'No instructor yet'}</Text>
+                </View>
+                <View style={s.infoLine}>
+                  <Ionicons name="calendar-outline" size={14} color={C.muted} />
+                  <Text style={s.courseMeta} numberOfLines={1}>
+                    {subject.yearLevel}, {subject.semester}, {subject.academicYear}
+                  </Text>
+                </View>
+              </View>
+              <View style={s.enrollTag}>
+                <Ionicons name="people" size={13} color="#FFFFFF" />
+                <Text style={s.enrollTagText}>{subject.enrolledCount} enrolled</Text>
+              </View>
+            </View>
+            <View style={s.courseGo}>
+              <Ionicons name="arrow-forward" size={20} color={C.ink} />
+            </View>
+          </View>
+        </View>
+      </Animated.View>
+    </Pressable>
+  );
+}
+
+function ModalShell({
+  visible, title, icon, onClose, children, footer,
+}: {
+  visible: boolean;
+  title: string;
+  icon: keyof typeof Ionicons.glyphMap;
+  onClose: () => void;
+  children: React.ReactNode;
+  footer?: React.ReactNode;
+}) {
+  const pop = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    if (visible) {
+      pop.setValue(0);
+      Animated.spring(pop, { toValue: 1, friction: 6, tension: 110, useNativeDriver: true }).start();
+    }
+  }, [visible, pop]);
+  return (
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
+      <View style={s.modalOverlay}>
+        <Animated.View
+          style={[
+            s.modalWrap,
+            { opacity: pop, transform: [{ scale: pop.interpolate({ inputRange: [0, 1], outputRange: [0.85, 1] }) }, { rotate: '-0.4deg' }] },
+          ]}
+        >
+          <View style={s.modalShadow} />
+          <View style={s.modalCard}>
+            <View style={s.modalHeader}>
+              <View style={s.modalIcon}>
+                <Ionicons name={icon} size={18} color={C.ink} />
+              </View>
+              <Text style={s.modalTitle} numberOfLines={1}>{title}</Text>
+              <Pressable onPress={onClose} style={s.modalClose} accessibilityLabel="Close">
+                <Ionicons name="close" size={18} color={C.ink} />
+              </Pressable>
+            </View>
+            <ScrollView style={{ maxHeight: 460 }} showsVerticalScrollIndicator={false}>
+              {children}
+            </ScrollView>
+            {footer ? <View style={s.modalFooter}>{footer}</View> : null}
+          </View>
+        </Animated.View>
+      </View>
+    </Modal>
+  );
+}
+
+function Field({
+  label, value, onChangeText, placeholder, secure, email, flex,
+}: {
+  label: string;
+  value: string;
+  onChangeText: (v: string) => void;
+  placeholder?: string;
+  secure?: boolean;
+  email?: boolean;
+  flex?: boolean;
+}) {
+  const [focus, setFocus] = useState(false);
+  return (
+    <View style={[s.formField, flex && { flex: 1 }]}>
+      <Text style={s.formLabel}>{label}</Text>
+      <TextInput
+        style={[s.formInput, focus && s.formInputFocus]}
+        value={value}
+        onChangeText={onChangeText}
+        placeholder={placeholder}
+        placeholderTextColor={C.muted}
+        secureTextEntry={secure}
+        autoCapitalize={email || secure ? 'none' : 'words'}
+        keyboardType={email ? 'email-address' : 'default'}
+        onFocus={() => setFocus(true)}
+        onBlur={() => setFocus(false)}
+      />
+    </View>
+  );
+}
+
+function Empty({ icon, title, text }: { icon: keyof typeof Ionicons.glyphMap; title: string; text: string }) {
+  return (
+    <View style={s.emptyBox}>
+      <View style={s.emptyIcon}>
+        <Ionicons name={icon} size={26} color={C.ink} />
+      </View>
+      <Text style={s.emptyTitle}>{title}</Text>
+      <Text style={s.emptyText}>{text}</Text>
+    </View>
+  );
+}
+
+/** Collapsible filter drawer so the lists get the room. */
+function FilterDrawer({
+  activeCount, onClear, children,
+}: { activeCount: number; onClear: () => void; children: React.ReactNode }) {
+  const [open, setOpen] = useState(false);
+  const rot = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    Animated.spring(rot, { toValue: open ? 1 : 0, friction: 6, useNativeDriver: true }).start();
+  }, [open, rot]);
+  return (
+    <View style={s.drawer}>
+      <Pressable style={s.drawerHead} onPress={() => setOpen((o) => !o)}>
+        <View style={s.drawerIcon}>
+          <Ionicons name="options" size={16} color={C.ink} />
+        </View>
+        <Text style={s.drawerTitle}>Filters</Text>
+        {activeCount > 0 && (
+          <View style={s.drawerCount}>
+            <Text style={s.drawerCountText}>{activeCount} on</Text>
+          </View>
+        )}
+        <View style={{ flex: 1 }} />
+        {activeCount > 0 && (
+          <Pressable onPress={onClear} hitSlop={8}>
+            <Text style={s.clearText}>Clear all</Text>
+          </Pressable>
+        )}
+        <Animated.View style={{ transform: [{ rotate: rot.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '180deg'] }) }] }}>
+          <Ionicons name="chevron-down" size={18} color={C.ink} />
+        </Animated.View>
+      </Pressable>
+      {open && <View style={s.drawerBody}>{children}</View>}
+    </View>
+  );
+}
+
+function FilterGroup({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <View style={{ gap: 6 }}>
+      <Text style={s.filterTitle}>{title}</Text>
+      <View style={s.chipRow}>{children}</View>
+    </View>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/*  Screen                                                             */
+/* ------------------------------------------------------------------ */
 export default function ChairDashboardScreen() {
   const { token, user, isLoading: authLoading } = useAuth();
   const { width } = useWindowDimensions();
   const isDesktop = width >= 992;
+  const [fontsLoaded] = useFonts({ Outfit_400Regular, Outfit_500Medium, Outfit_700Bold, TitanOne_400Regular });
 
-  // Role Gate: strictly Program Chair or Admin
+  const [reduce, setReduce] = useState(false);
+  useEffect(() => {
+    AccessibilityInfo.isReduceMotionEnabled().then(setReduce).catch(() => {});
+  }, []);
+
+  // Role gate: strictly Program Chair or Admin
   useEffect(() => {
     if (!authLoading) {
       if (!user) {
@@ -50,33 +639,23 @@ export default function ChairDashboardScreen() {
         return;
       }
       const r = user.role;
-      if (r !== 'program chair' && r !== 'program_chair' && r !== 'admin') {
-        if (r === 'faculty') {
-          router.replace('/faculty/dashboard' as any);
-        } else {
-          router.replace('/student/dashboard' as any);
-        }
+      if (!isChairRole(r) && r !== 'admin') {
+        if (r === 'faculty') router.replace('/faculty/dashboard' as any);
+        else router.replace('/student/dashboard' as any);
       }
     }
   }, [authLoading, user]);
 
-  // Layout & Navigation State
   const [activeTab, setActiveTab] = useState<ChairTab>('dashboard');
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
-  // Data States
+  // Data
   const [loading, setLoading] = useState(true);
   const [accounts, setAccounts] = useState<ChairAccount[]>([]);
   const [subjects, setSubjects] = useState<ChairSubject[]>([]);
   const [reportsData, setReportsData] = useState<ChairReportsData | null>(null);
-  const [stats, setStats] = useState<ChairStats>({
-    totalUsers: 0,
-    studentCount: 0,
-    facultyCount: 0,
-    chairCount: 0,
-  });
+  const [stats, setStats] = useState<ChairStats>({ totalUsers: 0, studentCount: 0, facultyCount: 0, chairCount: 0 });
 
-  // Global Filters (Per Subject, Per Year, Per Sem, Per SY, Per Role, Search)
+  // Filters
   const [searchTerm, setSearchTerm] = useState('');
   const [filterRole, setFilterRole] = useState('all');
   const [filterSubjectId, setFilterSubjectId] = useState('all');
@@ -90,7 +669,7 @@ export default function ChairDashboardScreen() {
   const [showDirectEnrollModal, setShowDirectEnrollModal] = useState(false);
   const [showBatchModal, setShowBatchModal] = useState(false);
 
-  // Form state: Create Account
+  // Create account
   const [newFirstName, setNewFirstName] = useState('');
   const [newLastName, setNewLastName] = useState('');
   const [newEmail, setNewEmail] = useState('');
@@ -101,7 +680,7 @@ export default function ChairDashboardScreen() {
   const [newSemester, setNewSemester] = useState('1st Semester');
   const [newSchoolYear, setNewSchoolYear] = useState('2026-2027');
 
-  // Form state: Edit Account & Role (Replaces cycle role)
+  // Edit account
   const [editingAccount, setEditingAccount] = useState<ChairAccount | null>(null);
   const [editFirstName, setEditFirstName] = useState('');
   const [editLastName, setEditLastName] = useState('');
@@ -112,17 +691,17 @@ export default function ChairDashboardScreen() {
   const [editSemester, setEditSemester] = useState('1st Semester');
   const [editSchoolYear, setEditSchoolYear] = useState('2026-2027');
 
-  // Direct Student Enrollment Modal State
+  // Direct enrollment
   const [enrollTargetStudent, setEnrollTargetStudent] = useState<ChairAccount | null>(null);
   const [selectedSubjectToEnroll, setSelectedSubjectToEnroll] = useState<string>('');
 
-  // Batch Status Update State
+  // Batch
   const [selectedStudentIds, setSelectedStudentIds] = useState<string[]>([]);
   const [batchYearLevel, setBatchYearLevel] = useState('1st Year');
   const [batchSemester, setBatchSemester] = useState('1st Semester');
   const [batchSchoolYear, setBatchSchoolYear] = useState('2026-2027');
 
-  // Smart Enrollment Engine
+  // Smart enrollment
   const [enrollCriteriaYear, setEnrollCriteriaYear] = useState('1st Year');
   const [enrollCriteriaSem, setEnrollCriteriaSem] = useState('1st Semester');
   const [enrollCriteriaSY, setEnrollCriteriaSY] = useState('2026-2027');
@@ -133,24 +712,57 @@ export default function ChairDashboardScreen() {
   const [feedbackMsg, setFeedbackMsg] = useState('');
   const [errorMsg, setErrorMsg] = useState('');
 
-  // Initial Data Load
+  // Mascot
+  const bob = useBob(reduce);
+  const jump = useRef(new Animated.Value(0)).current;
+  const { anim: bubbleAnim, text: bubbleText, say } = useBubble();
+  const pokeIdx = useRef(0);
+  const [burst, setBurst] = useState(0);
+  const hop = () =>
+    Animated.sequence([
+      Animated.timing(jump, { toValue: -22, duration: 170, easing: Easing.out(Easing.quad), useNativeDriver: true }),
+      Animated.spring(jump, { toValue: 0, friction: 3, tension: 110, useNativeDriver: true }),
+    ]).start();
+  const celebrate = (msg: string) => {
+    hop();
+    setBurst((b) => b + 1);
+    say(msg, 3000);
+  };
+  const pokeMascot = () => {
+    hop();
+    const lines = ['Boop!', 'Everything looks in order.', 'Need a hand with enrollment?', 'Tap a folder to manage it.'];
+    say(lines[pokeIdx.current++ % lines.length]);
+  };
+
+  // Tab switch pop
+  const tabAnim = useRef(new Animated.Value(1)).current;
+  const switchTab = (t: ChairTab) => {
+    setActiveTab(t);
+    setFeedbackMsg('');
+    tabAnim.setValue(0);
+    Animated.spring(tabAnim, { toValue: 1, friction: 7, tension: 90, useNativeDriver: true }).start();
+  };
+
+  /* ---------------- data ---------------- */
   useEffect(() => {
     loadSubjects();
-    loadAccounts();
-    loadReports();
   }, [token]);
 
-  // Reload filtered accounts & reports when filter values change
   useEffect(() => {
     loadAccounts();
     loadReports();
   }, [token, filterRole, filterSubjectId, filterYearLevel, filterSemester, filterSchoolYear]);
 
+  useEffect(() => {
+    if (!loading && fontsLoaded) {
+      const t = setTimeout(() => say(`${greeting()}, ${user?.firstName || 'chair'}!`), 600);
+      return () => clearTimeout(t);
+    }
+  }, [loading, fontsLoaded]);
+
   const loadSubjects = async () => {
     const res = await chairApi.getAllSubjects(token);
-    if (res.success && res.data) {
-      setSubjects(res.data);
-    }
+    if (res.success && res.data) setSubjects(res.data);
   };
 
   const loadAccounts = async () => {
@@ -163,47 +775,42 @@ export default function ChairDashboardScreen() {
       semester: filterSemester === 'all' ? undefined : filterSemester,
       schoolYear: filterSchoolYear === 'all' ? undefined : filterSchoolYear,
     });
-
     if (res.success && res.data) {
       setAccounts(res.data.accounts);
-      if (res.data.stats) {
-        setStats(res.data.stats);
-      }
+      if (res.data.stats) setStats(res.data.stats);
     }
     setLoading(false);
   };
 
-  const loadReports = async (overrides?: {
-    subjectId?: string;
-    yearLevel?: string;
-    semester?: string;
-    schoolYear?: string;
-  }) => {
-    const sid = overrides?.subjectId !== undefined ? overrides.subjectId : filterSubjectId;
-    const yl = overrides?.yearLevel !== undefined ? overrides.yearLevel : filterYearLevel;
-    const sem = overrides?.semester !== undefined ? overrides.semester : filterSemester;
-    const sy = overrides?.schoolYear !== undefined ? overrides.schoolYear : filterSchoolYear;
-
+  const loadReports = async () => {
     const res = await chairApi.getChairReports(token, {
-      subjectId: sid === 'all' ? undefined : sid,
-      yearLevel: yl === 'all' ? undefined : yl,
-      semester: sem === 'all' ? undefined : sem,
-      schoolYear: sy === 'all' ? undefined : sy,
+      subjectId: filterSubjectId === 'all' ? undefined : filterSubjectId,
+      yearLevel: filterYearLevel === 'all' ? undefined : filterYearLevel,
+      semester: filterSemester === 'all' ? undefined : filterSemester,
+      schoolYear: filterSchoolYear === 'all' ? undefined : filterSchoolYear,
     });
-    if (res.success && res.data) {
-      setReportsData(res.data);
-    }
+    if (res.success && res.data) setReportsData(res.data);
   };
 
-  // ─── ACCOUNT ACTIONS ─────────────────────────────────────────
+  const activeFilterCount = [filterRole, filterSubjectId, filterYearLevel, filterSemester, filterSchoolYear].filter(
+    (f) => f !== 'all'
+  ).length;
+  const clearFilters = () => {
+    setFilterRole('all');
+    setFilterSubjectId('all');
+    setFilterYearLevel('all');
+    setFilterSemester('all');
+    setFilterSchoolYear('all');
+  };
 
+  /* ---------------- account actions ---------------- */
   const handleOpenEditModal = (acc: ChairAccount) => {
     setEditingAccount(acc);
     setEditFirstName(acc.firstName);
     setEditLastName(acc.lastName);
     setEditEmail(acc.email);
     setEditUsername(acc.username);
-    setEditRole(acc.role === 'program chair' ? 'program_chair' : acc.role);
+    setEditRole(isChairRole(acc.role) ? 'program_chair' : acc.role);
     setEditYearLevel(acc.yearLevel || '1st Year');
     setEditSemester(acc.activeSemester || '1st Semester');
     setEditSchoolYear(acc.schoolYear || '2026-2027');
@@ -215,7 +822,6 @@ export default function ChairDashboardScreen() {
     if (!editingAccount) return;
     setActionLoading(true);
     setErrorMsg('');
-
     const res = await chairApi.updateAccount(token, editingAccount._id, {
       firstName: editFirstName,
       lastName: editLastName,
@@ -226,44 +832,14 @@ export default function ChairDashboardScreen() {
       activeSemester: editRole === 'student' ? editSemester : undefined,
       schoolYear: editRole === 'student' ? editSchoolYear : undefined,
     });
-
     setActionLoading(false);
     if (res.success) {
       setShowEditModal(false);
       setEditingAccount(null);
       loadAccounts();
+      celebrate('Account updated.');
     } else {
-      setErrorMsg(res.message || 'Failed to update user account and role.');
-    }
-  };
-
-  const handleCreateAccount = async () => {
-    if (!newFirstName || !newLastName || !newEmail || !newUsername || !newPassword) {
-      setErrorMsg('Please complete all required fields.');
-      return;
-    }
-    setActionLoading(true);
-    setErrorMsg('');
-
-    const res = await chairApi.createAccount(token, {
-      firstName: newFirstName,
-      lastName: newLastName,
-      email: newEmail,
-      username: newUsername,
-      password: newPassword,
-      role: newRole,
-      yearLevel: newRole === 'student' ? newYearLevel : undefined,
-      activeSemester: newRole === 'student' ? newSemester : undefined,
-      schoolYear: newRole === 'student' ? newSchoolYear : undefined,
-    });
-
-    setActionLoading(false);
-    if (res.success) {
-      setShowCreateModal(false);
-      resetCreateForm();
-      loadAccounts();
-    } else {
-      setErrorMsg(res.message || 'Failed to provision account.');
+      setErrorMsg(res.message || 'Could not update this account. Check the details and try again.');
     }
   };
 
@@ -280,19 +856,52 @@ export default function ChairDashboardScreen() {
     setErrorMsg('');
   };
 
-  const handleDeleteAccount = (acc: ChairAccount) => {
-    if (typeof window !== 'undefined') {
-      if (window.confirm(`Are you sure you want to delete ${acc.firstName} ${acc.lastName}? This permanently removes all academic records and enrollments.`)) {
-        chairApi.deleteAccount(token, acc._id).then(res => {
-          if (res.success) loadAccounts();
-          else alert(res.message || 'Deletion failed.');
-        });
-      }
+  const handleCreateAccount = async () => {
+    if (!newFirstName || !newLastName || !newEmail || !newUsername || !newPassword) {
+      setErrorMsg('Fill in every field marked with a star.');
+      return;
+    }
+    setActionLoading(true);
+    setErrorMsg('');
+    const res = await chairApi.createAccount(token, {
+      firstName: newFirstName,
+      lastName: newLastName,
+      email: newEmail,
+      username: newUsername,
+      password: newPassword,
+      role: newRole,
+      yearLevel: newRole === 'student' ? newYearLevel : undefined,
+      activeSemester: newRole === 'student' ? newSemester : undefined,
+      schoolYear: newRole === 'student' ? newSchoolYear : undefined,
+    });
+    setActionLoading(false);
+    if (res.success) {
+      setShowCreateModal(false);
+      resetCreateForm();
+      loadAccounts();
+      celebrate('New account created!');
+    } else {
+      setErrorMsg(res.message || 'Could not create this account. Check the details and try again.');
     }
   };
 
-  // ─── DIRECT STUDENT ENROLLMENT HANDLERS ──────────────────────
+  const handleDeleteAccount = (acc: ChairAccount) => {
+    confirmAction(
+      `Delete ${acc.firstName} ${acc.lastName}? This permanently removes their academic records and enrollments.`,
+      async () => {
+        const res = await chairApi.deleteAccount(token, acc._id);
+        if (res.success) {
+          setSelectedStudentIds((ids) => ids.filter((i) => i !== acc._id));
+          loadAccounts();
+          say('Account deleted.');
+        } else {
+          Alert.alert('Could not delete', res.message || 'Deletion failed.');
+        }
+      }
+    );
+  };
 
+  /* ---------------- direct enrollment ---------------- */
   const handleOpenDirectEnroll = (stu: ChairAccount) => {
     setEnrollTargetStudent(stu);
     setSelectedSubjectToEnroll(subjects[0]?.id || '');
@@ -305,39 +914,44 @@ export default function ChairDashboardScreen() {
     setActionLoading(true);
     const res = await chairApi.enrollStudentDirect(token, enrollTargetStudent._id, selectedSubjectToEnroll);
     setActionLoading(false);
-
     if (res.success) {
-      setFeedbackMsg(res.message || 'Student enrolled successfully.');
+      setFeedbackMsg(res.message || 'Student enrolled.');
       loadAccounts();
       loadSubjects();
-      setTimeout(() => setShowDirectEnrollModal(false), 1500);
+      celebrate('Enrolled!');
+      setTimeout(() => {
+        setShowDirectEnrollModal(false);
+        setFeedbackMsg('');
+      }, 1300);
     } else {
-      Alert.alert('Enrollment Error', res.message || 'Could not enroll student in subject.');
+      Alert.alert('Enrollment error', res.message || 'Could not enroll the student in this subject.');
     }
   };
 
-  const handleUnenrollDirect = async (studentId: string, subjectId: string) => {
-    if (typeof window !== 'undefined') {
-      if (window.confirm('Are you sure you want to unenroll this student from this course? Coursework will be locked.')) {
-        const res = await chairApi.unenrollStudentDirect(token, studentId, subjectId);
-        if (res.success) {
-          loadAccounts();
-          loadSubjects();
-        } else {
-          alert(res.message || 'Failed to unenroll.');
-        }
+  const handleUnenrollDirect = (studentId: string, subjectId: string, code: string) => {
+    confirmAction(`Unenroll this student from ${code}? Their coursework will be locked.`, async () => {
+      const res = await chairApi.unenrollStudentDirect(token, studentId, subjectId);
+      if (res.success) {
+        loadAccounts();
+        loadSubjects();
+        say(`Removed from ${code}.`);
+      } else {
+        Alert.alert('Could not unenroll', res.message || 'Failed to unenroll.');
       }
-    }
+    });
   };
 
-  // ─── BATCH & SMART ENROLLMENT ────────────────────────────────
-
+  /* ---------------- batch + smart enrollment ---------------- */
   const handleToggleSelectStudent = (id: string) => {
-    if (selectedStudentIds.includes(id)) {
-      setSelectedStudentIds(selectedStudentIds.filter(s => s !== id));
-    } else {
-      setSelectedStudentIds([...selectedStudentIds, id]);
-    }
+    setSelectedStudentIds((ids) => (ids.includes(id) ? ids.filter((x) => x !== id) : [...ids, id]));
+  };
+
+  const visibleStudents = useMemo(() => accounts.filter((a) => a.role === 'student'), [accounts]);
+  const allVisibleSelected =
+    visibleStudents.length > 0 && visibleStudents.every((a) => selectedStudentIds.includes(a._id));
+  const toggleSelectAll = () => {
+    if (allVisibleSelected) setSelectedStudentIds((ids) => ids.filter((id) => !visibleStudents.some((a) => a._id === id)));
+    else setSelectedStudentIds((ids) => Array.from(new Set([...ids, ...visibleStudents.map((a) => a._id)])));
   };
 
   const handleBatchUpdateStatus = async () => {
@@ -354,8 +968,9 @@ export default function ChairDashboardScreen() {
       setShowBatchModal(false);
       setSelectedStudentIds([]);
       loadAccounts();
+      celebrate('Cohort moved up!');
     } else {
-      Alert.alert('Batch Update Failed', res.message || 'Could not update cohorts.');
+      Alert.alert('Batch update failed', res.message || 'Could not update the cohort.');
     }
   };
 
@@ -370,6 +985,7 @@ export default function ChairDashboardScreen() {
     setPreviewLoading(false);
     if (res.success && res.data) {
       setPreviewData(res.data);
+      say(`Found ${res.data.matchedStudentsCount} students.`);
     } else {
       setFeedbackMsg(res.message || 'Failed to simulate matching.');
     }
@@ -390,1897 +1006,1081 @@ export default function ChairDashboardScreen() {
       setPreviewData(null);
       loadAccounts();
       loadSubjects();
+      celebrate('Enrollment done!');
     } else {
       setFeedbackMsg(res.message || 'Enrollment execution failed.');
     }
   };
 
-  // Get current logged-in role label directly from user state
-  const currentUserRole = user?.role || 'program_chair';
-  const displayRoleLabel =
-    currentUserRole === 'program chair' || currentUserRole === 'program_chair'
-      ? 'PROGRAM CHAIR'
-      : currentUserRole === 'admin'
-      ? 'ADMINISTRATOR'
-      : currentUserRole === 'faculty'
-      ? 'FACULTY'
-      : 'STUDENT';
+  /* ---------------- derived ---------------- */
+  const reportList = reportsData?.subjectReports ?? [];
+  const reportSummary = useMemo(() => {
+    const n = reportList.length;
+    return {
+      avg: n ? Math.round(reportList.reduce((a, r) => a + (r.averageProgressPercent || 0), 0) / n) : 0,
+      enrolled: reportList.reduce((a, r) => a + (r.enrolledCount || 0), 0),
+      completed: reportList.reduce((a, r) => a + (r.completedStudentsCount || 0), 0),
+    };
+  }, [reportList]);
 
-  // Navigation Items
-  const NAV_ITEMS: { id: ChairTab; label: string; badge?: number }[] = [
-    { id: 'dashboard', label: 'Dashboard' },
-    { id: 'reports', label: 'Reports' },
-    { id: 'accounts', label: 'Accounts', badge: stats.totalUsers },
-    { id: 'enrollment', label: 'Enrollment' },
+  const NAV: { id: ChairTab; label: string; icon: keyof typeof Ionicons.glyphMap; badge?: number }[] = [
+    { id: 'dashboard', label: 'Overview', icon: 'grid' },
+    { id: 'reports', label: 'Reports', icon: 'stats-chart' },
+    { id: 'accounts', label: 'Accounts', icon: 'people', badge: stats.totalUsers },
+    { id: 'enrollment', label: 'Enrollment', icon: 'git-merge' },
   ];
+
+  /* ---------------- early returns (after all hooks) ---------------- */
+  if (!fontsLoaded) return null;
 
   if (authLoading) {
     return (
-      <View style={styles.loadingPad}>
-        <ActivityIndicator size="large" color={COLORS.primary} />
-        <Text style={styles.loadingText}>Verifying session security...</Text>
+      <View style={s.centered}>
+        <Image source={require('@/assets/images/mascot_gif.gif')} style={{ width: 160, height: 160 }} resizeMode="contain" />
+        <Text style={s.centeredTitle}>Checking your session…</Text>
       </View>
     );
   }
 
-  return (
-    <SafeAreaView style={styles.safeArea} edges={['top']}>
-      {/* ─── TOP GLOBAL BAR ───────────────────────────────────────── */}
-      <View style={styles.topBar}>
-        <View style={styles.topBarLeft}>
-          {/* Hamburger toggle for mobile */}
-          {!isDesktop && (
-            <Pressable style={styles.hamburgerBtn} onPress={() => setMobileMenuOpen(prev => !prev)}>
-              <Text style={styles.hamburgerIcon}>☰</Text>
-            </Pressable>
-          )}
-          <View>
-            <Text style={styles.appTitle}>Academic Command Center</Text>
-            <Text style={styles.appSubTitle}>Institutional Administration & Enrollment</Text>
+  const initials = (user?.firstName?.[0] ?? '') + (user?.lastName?.[0] ?? '');
+
+  /* ---------------- sections ---------------- */
+  const renderNav = () => {
+    if (isDesktop) {
+      return (
+        <View style={s.sidebar}>
+          <View style={s.profileCard}>
+            <View style={s.profileShadow} />
+            <View style={s.profileFace}>
+              <View style={s.bigAvatar}>
+                <Text style={s.bigAvatarText}>{initials}</Text>
+              </View>
+              <Text style={s.profileName} numberOfLines={1}>{user?.firstName} {user?.lastName}</Text>
+              <Text style={s.profileEmail} numberOfLines={1}>{user?.email}</Text>
+              <View style={s.rolePill}>
+                <Text style={s.rolePillText}>{roleLabel(user?.role)}</Text>
+              </View>
+            </View>
+          </View>
+
+          <View style={{ gap: 4, marginTop: 20 }}>
+            {NAV.map((n) => {
+              const on = activeTab === n.id;
+              return (
+                <Chunky
+                  key={n.id}
+                  held={on}
+                  face={on ? C.coral : C.paper}
+                  shadow={on ? C.coralDeep : C.pinkDeep}
+                  radius={14}
+                  depth={5}
+                  onPress={() => switchTab(n.id)}
+                  faceStyle={s.navFace}
+                >
+                  <Ionicons name={n.icon} size={18} color={on ? C.cream : C.ink} />
+                  <Text style={[s.navText, on && { color: C.cream }]}>{n.label}</Text>
+                  {n.badge !== undefined && (
+                    <View style={[s.navBadge, on && { backgroundColor: C.paper }]}>
+                      <Text style={s.navBadgeText}>{n.badge}</Text>
+                    </View>
+                  )}
+                </Chunky>
+              );
+            })}
+          </View>
+
+          <View style={{ flex: 1 }} />
+          <Btn label="Faculty studio" tone="paper" icon="swap-horizontal" onPress={() => router.push('/faculty/dashboard' as any)} />
+        </View>
+      );
+    }
+    return (
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.mobileNav}>
+        {NAV.map((n) => {
+          const on = activeTab === n.id;
+          return (
+            <Chunky
+              key={n.id}
+              held={on}
+              face={on ? C.coral : C.paper}
+              shadow={on ? C.coralDeep : C.pinkDeep}
+              radius={14}
+              depth={4}
+              onPress={() => switchTab(n.id)}
+              faceStyle={s.navFaceSm}
+            >
+              <Ionicons name={n.icon} size={16} color={on ? C.cream : C.ink} />
+              <Text style={[s.navText, on && { color: C.cream }]}>{n.label}</Text>
+            </Chunky>
+          );
+        })}
+      </ScrollView>
+    );
+  };
+
+  const renderOverview = () => (
+    <View>
+      <View style={s.statRow}>
+        <StatSticker label="Accounts" icon="people" accent={ACCENTS[2]} rot={-2} radius={30} delay={0} value={stats.totalUsers}
+          onTap={() => say(`${stats.totalUsers} people are registered.`)} />
+        <StatSticker label="Students" icon="school" accent={ACCENTS[0]} rot={1.5} radius={10} delay={90} value={stats.studentCount}
+          onTap={() => { switchTab('accounts'); setFilterRole('student'); say('Showing students.'); }} />
+        <StatSticker label="Faculty" icon="easel" accent={ACCENTS[3]} rot={-1.5} radius={26} delay={180} value={stats.facultyCount}
+          onTap={() => { switchTab('accounts'); setFilterRole('faculty'); say('Showing faculty.'); }} />
+        <StatSticker label="Chairs" icon="shield-checkmark" accent={ACCENTS[1]} rot={2} radius={14} delay={270} value={stats.chairCount}
+          onTap={() => say('That’s us!')} />
+      </View>
+
+      <View style={s.sectionHead}>
+        <Text style={s.h2}>Subject folders</Text>
+        <View style={s.countPill}>
+          <Text style={s.countPillText}>{subjects.length}</Text>
+        </View>
+      </View>
+
+      {subjects.length === 0 ? (
+        <Empty icon="folder-open-outline" title="No subjects yet" text="Subjects added by faculty will show up here as folders." />
+      ) : (
+        <View style={s.grid}>
+          {subjects.map((sub, i) => (
+            <FolderCard
+              key={sub.id}
+              subject={sub}
+              accent={ACCENTS[i % ACCENTS.length]}
+              tilt={i % 2 ? 0.4 : -0.4}
+              width={isDesktop ? '48.5%' : '100%'}
+              onManage={() => {
+                setFilterSubjectId(sub.id);
+                switchTab('accounts');
+                say(`Filtered to ${sub.code}.`);
+              }}
+            />
+          ))}
+        </View>
+      )}
+    </View>
+  );
+
+  const renderReports = () => (
+    <View>
+      <View style={s.sectionHead}>
+        <Text style={s.h2}>Reports</Text>
+      </View>
+      <Text style={s.lead}>See how far each cohort has gotten through its subjects.</Text>
+
+      <FilterDrawer activeCount={activeFilterCount} onClear={clearFilters}>
+        <FilterGroup title="Subject">
+          <Chip label="All subjects" active={filterSubjectId === 'all'} onPress={() => setFilterSubjectId('all')} />
+          {subjects.map((sub) => (
+            <Chip key={sub.id} label={sub.code} active={filterSubjectId === sub.id} onPress={() => setFilterSubjectId(sub.id)} />
+          ))}
+        </FilterGroup>
+        <FilterGroup title="Year level">
+          {['all', ...YEAR_LEVELS].map((y) => (
+            <Chip key={y} label={y === 'all' ? 'All years' : y} active={filterYearLevel === y} onPress={() => setFilterYearLevel(y)} />
+          ))}
+        </FilterGroup>
+        <FilterGroup title="Semester">
+          {['all', ...SEMESTERS].map((x) => (
+            <Chip key={x} label={x === 'all' ? 'All terms' : x} active={filterSemester === x} onPress={() => setFilterSemester(x)} />
+          ))}
+        </FilterGroup>
+        <FilterGroup title="School year">
+          {['all', ...SCHOOL_YEARS].map((x) => (
+            <Chip key={x} label={x === 'all' ? 'All years' : x} active={filterSchoolYear === x} onPress={() => setFilterSchoolYear(x)} />
+          ))}
+        </FilterGroup>
+      </FilterDrawer>
+
+      {/* summary window */}
+      <View style={s.window}>
+        <View style={s.windowBar}>
+          <View style={s.dot} /><View style={s.dot} /><View style={s.dot} />
+          <Text style={s.windowTitle}>Across {reportList.length} subject{reportList.length === 1 ? '' : 's'}</Text>
+        </View>
+        <View style={s.summaryBody}>
+          <View style={{ flex: 1.4, minWidth: 220 }}>
+            <Text style={s.trailBig}>
+              {reportSummary.avg}%<Text style={s.trailBigSub}> average progress</Text>
+            </Text>
+            <ProgressTrail pct={reportSummary.avg} reduce={reduce} />
+          </View>
+          <View style={s.miniStats}>
+            <View style={[s.miniStat, { backgroundColor: C.cream }]}>
+              <Text style={s.miniVal}>{reportSummary.enrolled}</Text>
+              <Text style={s.miniLabel}>enrollments</Text>
+            </View>
+            <View style={[s.miniStat, { backgroundColor: C.pink }]}>
+              <Text style={s.miniVal}>{reportSummary.completed}</Text>
+              <Text style={s.miniLabel}>completed</Text>
+            </View>
           </View>
         </View>
+      </View>
 
-        {/* Identity Badge: Directly specifies role from DB user object */}
-        <View style={styles.topBarRight}>
-          <View style={styles.roleIdentityCard}>
-            <Text style={styles.roleIdentityPrefix}>LOGGED IN AS:</Text>
-            <View style={styles.roleIdentityPill}>
-              <Text style={styles.roleIdentityPillText}>{displayRoleLabel}</Text>
-            </View>
-            <Text style={styles.roleIdentityName}>
-              {user?.firstName} {user?.lastName}
-            </Text>
-          </View>
+      <View style={{ height: 20 }} />
 
-          <Button
-            title="+ Provision Account"
-            variant="primary"
-            size="sm"
+      {reportList.length === 0 ? (
+        <Empty icon="stats-chart-outline" title="Nothing to report" text="No subjects match these filters. Clear a filter to see more." />
+      ) : (
+        <View style={s.reportGrid}>
+          {reportList.map((rep, i) => {
+            const a = ACCENTS[i % ACCENTS.length];
+            return (
+              <View key={rep.subjectId} style={[s.reportCard, { width: isDesktop ? '48.5%' : '100%' }]}>
+                <View style={[s.reportTop, { backgroundColor: a.face }]}>
+                  <Text style={[s.reportCode, { color: a.fg }]}>{rep.code}</Text>
+                  <View style={s.reportEnroll}>
+                    <Ionicons name="people" size={12} color={C.ink} />
+                    <Text style={s.reportEnrollText}>{rep.enrolledCount}</Text>
+                  </View>
+                </View>
+                <View style={{ padding: 14, gap: 8 }}>
+                  <Text style={s.courseTitle} numberOfLines={2}>{rep.name}</Text>
+                  <Text style={s.courseMeta}>{rep.faculty} · {rep.yearLevel}, {rep.semester}</Text>
+                  <View style={s.progressRow}>
+                    <GrowBar pct={rep.averageProgressPercent} color={a.face === C.cream || a.face === C.pink ? C.coral : a.face} />
+                    <Text style={s.progressText}>{rep.averageProgressPercent}%</Text>
+                  </View>
+                  <View style={s.reportFoot}>
+                    <View style={s.footItem}>
+                      <Ionicons name="trophy" size={14} color={C.greenDeep} />
+                      <Text style={s.footText}>{rep.completedStudentsCount} finished</Text>
+                    </View>
+                    <View style={s.footItem}>
+                      <Ionicons name="document-text" size={14} color={C.muted} />
+                      <Text style={s.footText}>{rep.publishedTopicsCount} topics live</Text>
+                    </View>
+                  </View>
+                </View>
+              </View>
+            );
+          })}
+        </View>
+      )}
+    </View>
+  );
+
+  const renderAccounts = () => (
+    <View>
+      <View style={s.sectionHead}>
+        <Text style={s.h2}>Accounts</Text>
+        <View style={s.countPill}>
+          <Text style={s.countPillText}>{accounts.length}</Text>
+        </View>
+      </View>
+      <Text style={s.lead}>Edit roles, enroll students in subjects, or move whole groups to a new term.</Text>
+
+      <View style={s.searchRow}>
+        <Ionicons name="search" size={18} color={C.muted} />
+        <TextInput
+          style={s.searchInput}
+          placeholder="Search by name, email or username"
+          placeholderTextColor={C.muted}
+          value={searchTerm}
+          onChangeText={setSearchTerm}
+          onSubmitEditing={loadAccounts}
+          returnKeyType="search"
+        />
+        {searchTerm ? (
+          <Pressable
+            hitSlop={8}
             onPress={() => {
-              resetCreateForm();
-              setShowCreateModal(true);
+              setSearchTerm('');
+              setTimeout(loadAccounts, 0);
             }}
+          >
+            <Ionicons name="close-circle" size={18} color={C.muted} />
+          </Pressable>
+        ) : null}
+        <Btn label="Search" small tone="blue" onPress={loadAccounts} />
+      </View>
+
+      <FilterDrawer activeCount={activeFilterCount} onClear={clearFilters}>
+        <FilterGroup title="Subject">
+          <Chip label="All subjects" active={filterSubjectId === 'all'} onPress={() => setFilterSubjectId('all')} />
+          {subjects.map((sub) => (
+            <Chip key={sub.id} label={sub.code} active={filterSubjectId === sub.id} onPress={() => setFilterSubjectId(sub.id)} />
+          ))}
+        </FilterGroup>
+        <FilterGroup title="Role">
+          {['all', 'student', 'faculty', 'program_chair', 'admin'].map((r) => (
+            <Chip
+              key={r}
+              tone="coral"
+              label={r === 'all' ? 'Everyone' : r === 'program_chair' ? 'Chairs' : r === 'admin' ? 'Admins' : r === 'faculty' ? 'Faculty' : 'Students'}
+              active={filterRole === r}
+              onPress={() => setFilterRole(r)}
+            />
+          ))}
+        </FilterGroup>
+        <FilterGroup title="Year level">
+          {['all', ...YEAR_LEVELS].map((y) => (
+            <Chip key={y} label={y === 'all' ? 'All years' : y} active={filterYearLevel === y} onPress={() => setFilterYearLevel(y)} />
+          ))}
+        </FilterGroup>
+        <FilterGroup title="Semester">
+          {['all', ...SEMESTERS].map((x) => (
+            <Chip key={x} label={x === 'all' ? 'All terms' : x} active={filterSemester === x} onPress={() => setFilterSemester(x)} />
+          ))}
+        </FilterGroup>
+        <FilterGroup title="School year">
+          {['all', ...SCHOOL_YEARS].map((x) => (
+            <Chip key={x} label={x === 'all' ? 'All years' : x} active={filterSchoolYear === x} onPress={() => setFilterSchoolYear(x)} />
+          ))}
+        </FilterGroup>
+      </FilterDrawer>
+
+      {visibleStudents.length > 0 && (
+        <View style={s.selectBar}>
+          <Pressable style={s.selectAll} onPress={toggleSelectAll}>
+            <View style={[s.check, allVisibleSelected && s.checkOn]}>
+              {allVisibleSelected && <Ionicons name="checkmark" size={14} color="#FFFFFF" />}
+            </View>
+            <Text style={s.selectAllText}>
+              {allVisibleSelected ? 'Deselect all students' : `Select all ${visibleStudents.length} students`}
+            </Text>
+          </Pressable>
+          {selectedStudentIds.length > 0 && (
+            <Btn
+              label={`Update ${selectedStudentIds.length} selected`}
+              icon="swap-vertical"
+              small
+              tone="coral"
+              onPress={() => setShowBatchModal(true)}
+            />
+          )}
+        </View>
+      )}
+
+      {loading ? (
+        <View style={s.loadingPad}>
+          <Image source={require('@/assets/images/mascot_gif.gif')} style={{ width: 120, height: 120 }} resizeMode="contain" />
+          <Text style={s.loadingText}>Fetching accounts…</Text>
+        </View>
+      ) : accounts.length === 0 ? (
+        <Empty icon="search-outline" title="No one found" text="Try a different search or clear your filters." />
+      ) : (
+        <View style={{ gap: 14 }}>
+          {accounts.map((acc, i) => {
+            const tone = roleTone(acc.role);
+            const isStudent = acc.role === 'student';
+            const picked = selectedStudentIds.includes(acc._id);
+            return (
+              <View key={acc._id} style={[s.accCard, picked && s.accCardPicked, { transform: [{ rotate: i % 2 ? '0.25deg' : '-0.25deg' }] }]}>
+                <View style={s.accTop}>
+                  {isStudent ? (
+                    <Pressable onPress={() => handleToggleSelectStudent(acc._id)} hitSlop={6} accessibilityLabel="Select student">
+                      <View style={[s.check, picked && s.checkOn]}>
+                        {picked && <Ionicons name="checkmark" size={14} color="#FFFFFF" />}
+                      </View>
+                    </Pressable>
+                  ) : null}
+                  <Avatar first={acc.firstName} last={acc.lastName} tone={tone} />
+                  <View style={{ flex: 1 }}>
+                    <Text style={s.accName} numberOfLines={1}>{acc.firstName} {acc.lastName}</Text>
+                    <Text style={s.accSub} numberOfLines={1}>{acc.email} · @{acc.username}</Text>
+                  </View>
+                  <View style={[s.roleBadge, { backgroundColor: tone.face }]}>
+                    <Text style={[s.roleBadgeText, { color: tone.fg }]}>{isChairRole(acc.role) ? 'Chair' : roleLabel(acc.role)}</Text>
+                  </View>
+                </View>
+
+                {isStudent ? (
+                  <View style={s.accMid}>
+                    <View style={s.cohortTag}>
+                      <Ionicons name="school-outline" size={13} color={C.ink} />
+                      <Text style={s.cohortText}>
+                        {acc.yearLevel || '1st Year'}, {acc.activeSemester || '1st Semester'}
+                      </Text>
+                    </View>
+                    <View style={s.enrolledRow}>
+                      {acc.enrolledSubjects && acc.enrolledSubjects.length > 0 ? (
+                        acc.enrolledSubjects.map((sub, k) => (
+                          <Pressable
+                            key={k}
+                            style={s.enrolledChip}
+                            onPress={() => sub.id && handleUnenrollDirect(acc._id, sub.id, sub.code)}
+                            accessibilityLabel={`Unenroll from ${sub.code}`}
+                          >
+                            <Text style={s.enrolledChipText}>{sub.code}</Text>
+                            <Ionicons name="close-circle" size={14} color={C.coralDeep} />
+                          </Pressable>
+                        ))
+                      ) : (
+                        <Text style={s.unassignedText}>Not enrolled in any subject</Text>
+                      )}
+                      <Pressable style={s.addEnrollBtn} onPress={() => handleOpenDirectEnroll(acc)}>
+                        <Ionicons name="add" size={14} color={C.blueDeep} />
+                        <Text style={s.addEnrollText}>Enroll</Text>
+                      </Pressable>
+                    </View>
+                  </View>
+                ) : (
+                  <Text style={s.staffNote}>Academic staff don’t take subjects.</Text>
+                )}
+
+                <View style={s.accActions}>
+                  <Btn label="Edit" icon="create-outline" small tone="paper" onPress={() => handleOpenEditModal(acc)} />
+                  <Btn label="Delete" icon="trash-outline" small tone="red" onPress={() => handleDeleteAccount(acc)} />
+                </View>
+              </View>
+            );
+          })}
+        </View>
+      )}
+    </View>
+  );
+
+  const renderEnrollment = () => (
+    <View>
+      <View style={s.sectionHead}>
+        <Text style={s.h2}>Enrollment engine</Text>
+      </View>
+      <Text style={s.lead}>
+        Students can’t open a subject until they’re enrolled. Pick a cohort, preview who matches, then confirm.
+      </Text>
+
+      {feedbackMsg ? (
+        <View style={[s.notice, feedbackMsg.toLowerCase().includes('fail') ? { backgroundColor: C.pink } : { backgroundColor: '#C9F0DD' }]}>
+          <Ionicons
+            name={feedbackMsg.toLowerCase().includes('fail') ? 'alert-circle' : 'checkmark-circle'}
+            size={20}
+            color={C.ink}
+          />
+          <Text style={s.noticeText}>{feedbackMsg}</Text>
+        </View>
+      ) : null}
+
+      <View style={s.stepCard}>
+        <View style={s.stepHead}>
+          <View style={[s.stepNum, { backgroundColor: C.blue }]}>
+            <Text style={[s.stepNumText, { color: '#FFFFFF' }]}>1</Text>
+          </View>
+          <Text style={s.stepTitle}>Choose a cohort</Text>
+        </View>
+        <View style={{ gap: 14 }}>
+          <FilterGroup title="Year level">
+            {YEAR_LEVELS.map((y) => (
+              <Chip key={y} label={y} active={enrollCriteriaYear === y} onPress={() => setEnrollCriteriaYear(y)} />
+            ))}
+          </FilterGroup>
+          <FilterGroup title="Semester">
+            {SEMESTERS.map((x) => (
+              <Chip key={x} label={x} active={enrollCriteriaSem === x} onPress={() => setEnrollCriteriaSem(x)} />
+            ))}
+          </FilterGroup>
+          <FilterGroup title="School year">
+            {SCHOOL_YEARS.map((x) => (
+              <Chip key={x} label={x} active={enrollCriteriaSY === x} onPress={() => setEnrollCriteriaSY(x)} />
+            ))}
+          </FilterGroup>
+        </View>
+        <View style={{ marginTop: 18, alignSelf: 'flex-start' }}>
+          <Btn
+            label={previewLoading ? 'Matching…' : 'Preview matches'}
+            icon="search"
+            tone="blue"
+            loading={previewLoading}
+            onPress={handlePreviewEnrollment}
           />
         </View>
       </View>
 
-      {/* ─── MAIN SHELL: SIDEBAR + CONTENT ────────────────────────── */}
-      <View style={styles.mainShell}>
-        {/* Desktop Sidebar OR Mobile Drawer Modal */}
-        {(isDesktop || mobileMenuOpen) && (
-          <View style={isDesktop ? styles.sidebarDesktop : styles.sidebarMobileDrawer}>
-            {!isDesktop && (
-              <View style={styles.mobileDrawerHeader}>
-                <Text style={styles.drawerTitle}>Navigation Menu</Text>
-                <Pressable onPress={() => setMobileMenuOpen(false)}>
-                  <Text style={styles.closeDrawerText}>✕</Text>
-                </Pressable>
-              </View>
-            )}
-
-            <View style={styles.sidebarUserCard}>
-              <View style={styles.sidebarAvatar}>
-                <Text style={styles.sidebarAvatarText}>
-                  {user?.firstName?.[0]}{user?.lastName?.[0]}
-                </Text>
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.sidebarUserName}>{user?.firstName} {user?.lastName}</Text>
-                <Text style={styles.sidebarUserEmail} numberOfLines={1}>{user?.email}</Text>
-                <View style={styles.sidebarRoleTag}>
-                  <Text style={styles.sidebarRoleTagText}>{displayRoleLabel}</Text>
-                </View>
-              </View>
+      {previewData ? (
+        <View style={[s.stepCard, { backgroundColor: C.cream }]}>
+          <View style={s.stepHead}>
+            <View style={[s.stepNum, { backgroundColor: C.coral }]}>
+              <Text style={[s.stepNumText, { color: C.cream }]}>2</Text>
             </View>
+            <Text style={s.stepTitle}>Review and confirm</Text>
+          </View>
 
-            <View style={styles.sidebarDivider} />
-
-            {/* Navigation Tabs */}
-            <View style={styles.navMenu}>
-              {NAV_ITEMS.map(item => (
-                <Pressable
-                  key={item.id}
-                  style={[styles.navItem, activeTab === item.id && styles.navItemActive]}
-                  onPress={() => {
-                    setActiveTab(item.id);
-                    if (!isDesktop) setMobileMenuOpen(false);
-                    if (item.id === 'reports') loadReports();
-                  }}
-                >
-                  <Text style={[styles.navItemText, activeTab === item.id && styles.navItemTextActive]}>
-                    {item.label}
-                  </Text>
-                  {item.badge !== undefined && (
-                    <View style={[styles.navBadge, activeTab === item.id && styles.navBadgeActive]}>
-                      <Text style={[styles.navBadgeText, activeTab === item.id && styles.navBadgeTextActive]}>
-                        {item.badge}
-                      </Text>
-                    </View>
-                  )}
-                </Pressable>
-              ))}
+          <View style={s.matrixMetrics}>
+            <View style={[s.matrixPill, { backgroundColor: C.paper }]}>
+              <CountUp to={previewData.matchedStudentsCount} style={s.matrixVal} />
+              <Text style={s.matrixLabel}>students match</Text>
             </View>
-
-            <View style={styles.sidebarFooter}>
-              <Pressable style={styles.portalSwitchBtn} onPress={() => router.push('/faculty/dashboard' as any)}>
-                <Text style={styles.portalSwitchText}>Open Faculty Studio →</Text>
-              </Pressable>
+            <View style={[s.matrixPill, { backgroundColor: C.paper }]}>
+              <CountUp to={previewData.matchedSubjectsCount} style={s.matrixVal} />
+              <Text style={s.matrixLabel}>subjects match</Text>
             </View>
+            <View style={[s.matrixPill, { backgroundColor: '#C9F0DD' }]}>
+              <CountUp to={previewData.potentialEnrollmentCount} style={[s.matrixVal, { color: C.greenDeep }]} />
+              <Text style={s.matrixLabel}>new enrollments</Text>
+            </View>
+          </View>
+
+          <Text style={s.filterTitle}>Subjects in this cohort</Text>
+          <View style={[s.chipRow, { marginTop: 8 }]}>
+            {previewData.matchingSubjects.map((sub, i) => (
+              <View key={sub.id} style={[s.subjectTag, { backgroundColor: ACCENTS[i % ACCENTS.length].face }]}>
+                <Text style={[s.subjectTagCode, { color: ACCENTS[i % ACCENTS.length].fg }]}>{sub.code}</Text>
+                <Text style={[s.subjectTagName, { color: ACCENTS[i % ACCENTS.length].fg }]} numberOfLines={1}>{sub.name}</Text>
+              </View>
+            ))}
+          </View>
+
+          <Text style={s.executeNotice}>
+            Confirming gives all {previewData.matchedStudentsCount} students access to these subjects.
+          </Text>
+          <View style={{ alignSelf: 'flex-start' }}>
+            <Btn
+              label={actionLoading ? 'Enrolling…' : 'Enroll cohort'}
+              icon="rocket"
+              tone="coral"
+              loading={actionLoading}
+              disabled={previewData.potentialEnrollmentCount === 0}
+              onPress={handleExecuteSmartEnrollment}
+            />
+          </View>
+          {previewData.potentialEnrollmentCount === 0 && (
+            <Text style={[s.executeNotice, { marginTop: 8 }]}>Everyone here is already enrolled, so there’s nothing to do.</Text>
+          )}
+        </View>
+      ) : (
+        <View style={s.stepGhost}>
+          <View style={[s.stepNum, { backgroundColor: C.pink }]}>
+            <Text style={[s.stepNumText, { color: C.ink }]}>2</Text>
+          </View>
+          <Text style={s.ghostText}>Your preview will show up here after you pick a cohort.</Text>
+        </View>
+      )}
+    </View>
+  );
+
+  /* ================================================================ */
+  return (
+    <SafeAreaView style={s.safe} edges={['top']}>
+      <Burst trigger={burst} disabled={reduce} />
+
+      {/* top bar */}
+      <View style={s.topBar}>
+        <Pressable onPress={pokeMascot} accessibilityLabel="Mascot" style={s.mascotBtn}>
+          <Animated.Image
+            source={require('@/assets/images/mascot.png')}
+            resizeMode="contain"
+            style={{
+              width: 64,
+              height: 56,
+              transform: [
+                { translateY: Animated.add(jump, bob.interpolate({ inputRange: [0, 1], outputRange: [0, -3] })) },
+                { rotate: bob.interpolate({ inputRange: [0, 1], outputRange: ['-3deg', '3deg'] }) },
+              ],
+            }}
+          />
+        </Pressable>
+        <Bubble text={bubbleText} anim={bubbleAnim} style={{ position: 'absolute', top: 64, left: 14, zIndex: 30 }} />
+
+        <View style={{ flex: 1, minWidth: 160 }}>
+          <Text style={s.appTitle} numberOfLines={1}>Chair studio</Text>
+          <Text style={s.appSub} numberOfLines={1}>Accounts, enrollment and progress in one place</Text>
+        </View>
+
+        {!isDesktop && (
+          <View style={s.topIdentity}>
+            <Text style={s.topIdentityText}>{roleLabel(user?.role)}</Text>
           </View>
         )}
-
-        {/* ─── PRIMARY WORKSPACE AREA ─────────────────────────────── */}
-        <ScrollView style={styles.workspace} contentContainerStyle={styles.workspaceBody} showsVerticalScrollIndicator={false}>
-
-          {/* ══════════════════════════════════════════════════════════ */}
-          {/* TAB 1: DASHBOARD OVERVIEW ════════════════════════════════ */}
-          {/* ══════════════════════════════════════════════════════════ */}
-          {activeTab === 'dashboard' && (
-            <View>
-              {/* Metric Stat Cards */}
-              <View style={styles.statsGrid}>
-                <View style={styles.kpiCard}>
-                  <Text style={styles.kpiLabel}>TOTAL ACCOUNTS</Text>
-                  <Text style={styles.kpiValue}>{stats.totalUsers}</Text>
-                  <Text style={styles.kpiSub}>Registered institutional users</Text>
-                </View>
-
-                <View style={styles.kpiCard}>
-                  <Text style={[styles.kpiLabel, { color: '#27AE60' }]}>ACTIVE STUDENTS</Text>
-                  <Text style={[styles.kpiValue, { color: '#27AE60' }]}>{stats.studentCount}</Text>
-                  <Text style={styles.kpiSub}>Eligible for course enrollment</Text>
-                </View>
-
-                <View style={styles.kpiCard}>
-                  <Text style={[styles.kpiLabel, { color: '#2980B9' }]}>FACULTY INSTRUCTORS</Text>
-                  <Text style={[styles.kpiValue, { color: '#2980B9' }]}>{stats.facultyCount}</Text>
-                  <Text style={styles.kpiSub}>Curriculum & topic authors</Text>
-                </View>
-
-                <View style={styles.kpiCard}>
-                  <Text style={[styles.kpiLabel, { color: COLORS.primary }]}>PROGRAM CHAIRS</Text>
-                  <Text style={[styles.kpiValue, { color: COLORS.primary }]}>{stats.chairCount}</Text>
-                  <Text style={styles.kpiSub}>Administrative controllers</Text>
-                </View>
-              </View>
-
-              {/* Quick Actions & Curriculum Summary */}
-              <View style={styles.dashboardSection}>
-                <Text style={styles.sectionHeading}>Curriculum Tracks & Enrolled Courses</Text>
-                <View style={styles.curriculumGrid}>
-                  {subjects.map(s => (
-                    <View key={s.id} style={styles.curriculumCard}>
-                      <View style={styles.curriculumTop}>
-                        <View style={styles.courseCodeBadge}>
-                          <Text style={styles.courseCodeText}>{s.code}</Text>
-                        </View>
-                        <View style={styles.enrollPill}>
-                          <Text style={styles.enrollPillText}>{s.enrolledCount} Enrolled</Text>
-                        </View>
-                      </View>
-                      <Text style={styles.curriculumName}>{s.name}</Text>
-                      <Text style={styles.curriculumFaculty}>Instructor: {s.facultyName}</Text>
-                      <Text style={styles.curriculumMeta}>
-                        {s.yearLevel} • {s.semester} • {s.academicYear}
-                      </Text>
-                      <View style={styles.curriculumActions}>
-                        <Button
-                          title="Manage Enrollments"
-                          variant="secondary"
-                          size="sm"
-                          onPress={() => {
-                            setFilterSubjectId(s.id);
-                            setActiveTab('accounts');
-                          }}
-                        />
-                      </View>
-                    </View>
-                  ))}
-                </View>
-              </View>
-            </View>
-          )}
-
-          {/* ══════════════════════════════════════════════════════════ */}
-          {/* TAB 2: COMPREHENSIVE REPORTS ═════════════════════════════ */}
-          {/* ══════════════════════════════════════════════════════════ */}
-          {activeTab === 'reports' && (
-            <View style={styles.panel}>
-              <View style={styles.panelHeader}>
-                <View>
-                  <Text style={styles.panelTitle}>Academic & Cohort Analytics Reports</Text>
-                  <Text style={styles.panelSub}>
-                    Course completion rates, topic progression, and assessment passing benchmarks.
-                  </Text>
-                </View>
-              </View>
-
-              {/* Global Filters: Subject, Year Level, Semester, SY */}
-              <View style={styles.filtersBar}>
-                <View style={styles.filterItem}>
-                  <Text style={styles.filterTitle}>Subject Filter:</Text>
-                  <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.chipScroll}>
-                    <Pressable
-                      style={[styles.filterChip, filterSubjectId === 'all' && styles.filterChipActive]}
-                      onPress={() => { setFilterSubjectId('all'); loadReports(); }}
-                    >
-                      <Text style={[styles.filterChipText, filterSubjectId === 'all' && styles.filterChipTextActive]}>
-                        All Subjects
-                      </Text>
-                    </Pressable>
-                    {subjects.map(s => (
-                      <Pressable
-                        key={s.id}
-                        style={[styles.filterChip, filterSubjectId === s.id && styles.filterChipActive]}
-                        onPress={() => { setFilterSubjectId(s.id); loadReports(); }}
-                      >
-                        <Text style={[styles.filterChipText, filterSubjectId === s.id && styles.filterChipTextActive]}>
-                          {s.code}
-                        </Text>
-                      </Pressable>
-                    ))}
-                  </ScrollView>
-                </View>
-
-                <View style={styles.filterRow}>
-                  <View style={styles.filterItem}>
-                    <Text style={styles.filterTitle}>Year Level:</Text>
-                    <View style={styles.chipRow}>
-                      {['all', ...YEAR_LEVELS].map(y => (
-                        <Pressable
-                          key={y}
-                          style={[styles.filterChip, filterYearLevel === y && styles.filterChipActive]}
-                          onPress={() => { setFilterYearLevel(y); loadReports(); }}
-                        >
-                          <Text style={[styles.filterChipText, filterYearLevel === y && styles.filterChipTextActive]}>
-                            {y === 'all' ? 'All Years' : y}
-                          </Text>
-                        </Pressable>
-                      ))}
-                    </View>
-                  </View>
-
-                  <View style={styles.filterItem}>
-                    <Text style={styles.filterTitle}>Semester:</Text>
-                    <View style={styles.chipRow}>
-                      {['all', ...SEMESTERS].map(s => (
-                        <Pressable
-                          key={s}
-                          style={[styles.filterChip, filterSemester === s && styles.filterChipActive]}
-                          onPress={() => { setFilterSemester(s); loadReports(); }}
-                        >
-                          <Text style={[styles.filterChipText, filterSemester === s && styles.filterChipTextActive]}>
-                            {s === 'all' ? 'All Terms' : s}
-                          </Text>
-                        </Pressable>
-                      ))}
-                    </View>
-                  </View>
-                </View>
-              </View>
-
-              {/* Reports Table with horizontal scroll for mobile */}
-              <ScrollView horizontal showsHorizontalScrollIndicator={true} contentContainerStyle={{ minWidth: 850 }}>
-                <View style={[styles.table, { minWidth: 850 }]}>
-                  <View style={styles.tableHeader}>
-                    <Text style={[styles.colHeader, { flex: 1.5 }]}>COURSE CODE</Text>
-                    <Text style={[styles.colHeader, { flex: 2.5 }]}>SUBJECT TITLE</Text>
-                    <Text style={[styles.colHeader, { flex: 2 }]}>INSTRUCTOR</Text>
-                    <Text style={[styles.colHeader, { flex: 1.5 }]}>COHORT</Text>
-                    <Text style={[styles.colHeader, { flex: 1.5, textAlign: 'center' }]}>ENROLLED</Text>
-                    <Text style={[styles.colHeader, { flex: 2 }]}>AVG PROGRESS</Text>
-                    <Text style={[styles.colHeader, { flex: 1.5, textAlign: 'center' }]}>COMPLETED</Text>
-                  </View>
-
-                  {(!reportsData?.subjectReports || reportsData.subjectReports.length === 0) ? (
-                    <View style={styles.emptyTable}>
-                      <Text style={styles.emptyTableText}>No subject reports found matching the criteria.</Text>
-                    </View>
-                  ) : (
-                    reportsData.subjectReports.map((rep, idx) => (
-                      <View key={rep.subjectId} style={[styles.tableRow, idx % 2 === 1 && styles.tableRowAlt]}>
-                        <View style={{ flex: 1.5 }}>
-                          <Text style={styles.cellCodeText}>{rep.code}</Text>
-                        </View>
-                        <View style={{ flex: 2.5 }}>
-                          <Text style={styles.cellPrimary}>{rep.name}</Text>
-                          <Text style={styles.cellSub}>{rep.publishedTopicsCount} published topics</Text>
-                        </View>
-                        <Text style={[styles.cellText, { flex: 2 }]}>{rep.faculty}</Text>
-                        <View style={{ flex: 1.5 }}>
-                          <Text style={styles.cellCohortText}>{rep.yearLevel} • {rep.semester}</Text>
-                        </View>
-                        <View style={{ flex: 1.5, alignItems: 'center' }}>
-                          <View style={styles.enrollBadge}>
-                            <Text style={styles.enrollBadgeText}>{rep.enrolledCount}</Text>
-                          </View>
-                        </View>
-                        <View style={{ flex: 2 }}>
-                          <View style={styles.progressRow}>
-                            <View style={styles.progressBarBg}>
-                              <View style={[styles.progressBarFill, { width: `${rep.averageProgressPercent}%` }]} />
-                            </View>
-                            <Text style={styles.progressText}>{rep.averageProgressPercent}%</Text>
-                          </View>
-                        </View>
-                        <View style={{ flex: 1.5, alignItems: 'center' }}>
-                          <Text style={styles.completedCountText}>{rep.completedStudentsCount}</Text>
-                        </View>
-                      </View>
-                    ))
-                  )}
-                </View>
-              </ScrollView>
-            </View>
-          )}
-
-          {/* ══════════════════════════════════════════════════════════ */}
-          {/* TAB 3: ACCOUNTS LIFECYCLE MANAGER ════════════════════════ */}
-          {/* ══════════════════════════════════════════════════════════ */}
-          {activeTab === 'accounts' && (
-            <View style={styles.panel}>
-              <View style={styles.panelHeader}>
-                <View>
-                  <Text style={styles.panelTitle}>Account Lifecycle Manager</Text>
-                  <Text style={styles.panelSub}>
-                    Search, filter, update credentials, edit roles, and assign course enrollments.
-                  </Text>
-                </View>
-                <View style={styles.headerBtnGroup}>
-                  {selectedStudentIds.length > 0 && (
-                    <Button
-                      title={`Batch Status (${selectedStudentIds.length})`}
-                      variant="primary"
-                      size="sm"
-                      onPress={() => setShowBatchModal(true)}
-                    />
-                  )}
-                </View>
-              </View>
-
-              {/* Multi-Criteria Filters Bar */}
-              <View style={styles.filtersBar}>
-                <TextInput
-                  style={styles.searchInput}
-                  placeholder="Search by name, email, or username..."
-                  placeholderTextColor={COLORS.textMuted}
-                  value={searchTerm}
-                  onChangeText={setSearchTerm}
-                  onSubmitEditing={loadAccounts}
-                />
-
-                {/* Filter per Subject */}
-                <View style={styles.filterItem}>
-                  <Text style={styles.filterTitle}>Filter by Subject:</Text>
-                  <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.chipScroll}>
-                    <Pressable
-                      style={[styles.filterChip, filterSubjectId === 'all' && styles.filterChipActive]}
-                      onPress={() => setFilterSubjectId('all')}
-                    >
-                      <Text style={[styles.filterChipText, filterSubjectId === 'all' && styles.filterChipTextActive]}>
-                        All Subjects
-                      </Text>
-                    </Pressable>
-                    {subjects.map(s => (
-                      <Pressable
-                        key={s.id}
-                        style={[styles.filterChip, filterSubjectId === s.id && styles.filterChipActive]}
-                        onPress={() => setFilterSubjectId(s.id)}
-                      >
-                        <Text style={[styles.filterChipText, filterSubjectId === s.id && styles.filterChipTextActive]}>
-                          {s.code}
-                        </Text>
-                      </Pressable>
-                    ))}
-                  </ScrollView>
-                </View>
-
-                {/* Filter per Role */}
-                <View style={styles.filterRow}>
-                  <View style={styles.filterItem}>
-                    <Text style={styles.filterTitle}>Role Privilege:</Text>
-                    <View style={styles.chipRow}>
-                      {['all', 'student', 'faculty', 'program_chair', 'admin'].map(r => (
-                        <Pressable
-                          key={r}
-                          style={[styles.filterChip, filterRole === r && styles.filterChipActive]}
-                          onPress={() => setFilterRole(r)}
-                        >
-                          <Text style={[styles.filterChipText, filterRole === r && styles.filterChipTextActive]}>
-                            {r === 'all' ? 'All Roles' : r === 'program_chair' ? 'Chair' : r.toUpperCase()}
-                          </Text>
-                        </Pressable>
-                      ))}
-                    </View>
-                  </View>
-
-                  {/* Filter per Year Level */}
-                  <View style={styles.filterItem}>
-                    <Text style={styles.filterTitle}>Year Level:</Text>
-                    <View style={styles.chipRow}>
-                      {['all', ...YEAR_LEVELS].map(y => (
-                        <Pressable
-                          key={y}
-                          style={[styles.filterChip, filterYearLevel === y && styles.filterChipActive]}
-                          onPress={() => setFilterYearLevel(y)}
-                        >
-                          <Text style={[styles.filterChipText, filterYearLevel === y && styles.filterChipTextActive]}>
-                            {y === 'all' ? 'All' : y}
-                          </Text>
-                        </Pressable>
-                      ))}
-                    </View>
-                  </View>
-
-                  {/* Filter per Semester */}
-                  <View style={styles.filterItem}>
-                    <Text style={styles.filterTitle}>Semester:</Text>
-                    <View style={styles.chipRow}>
-                      {['all', ...SEMESTERS].map(s => (
-                        <Pressable
-                          key={s}
-                          style={[styles.filterChip, filterSemester === s && styles.filterChipActive]}
-                          onPress={() => setFilterSemester(s)}
-                        >
-                          <Text style={[styles.filterChipText, filterSemester === s && styles.filterChipTextActive]}>
-                            {s === 'all' ? 'All' : s}
-                          </Text>
-                        </Pressable>
-                      ))}
-                    </View>
-                  </View>
-                </View>
-              </View>
-
-              {/* Accounts Data Table with horizontal scroll for mobile */}
-              {loading ? (
-                <View style={styles.loadingPad}>
-                  <ActivityIndicator size="large" color={COLORS.primary} />
-                  <Text style={styles.loadingText}>Retrieving directory records...</Text>
-                </View>
-              ) : (
-                <ScrollView horizontal showsHorizontalScrollIndicator={true} contentContainerStyle={{ minWidth: 950 }}>
-                  <View style={[styles.table, { minWidth: 950 }]}>
-                    <View style={styles.tableHeader}>
-                      <Text style={[styles.colHeader, { flex: 2.2 }]}>USER / IDENTITY</Text>
-                      <Text style={[styles.colHeader, { flex: 2.5 }]}>EMAIL & USERNAME</Text>
-                      <Text style={[styles.colHeader, { flex: 1.8 }]}>ROLE PRIVILEGE</Text>
-                      <Text style={[styles.colHeader, { flex: 2 }]}>ACADEMIC COHORT</Text>
-                      <Text style={[styles.colHeader, { flex: 2.5 }]}>ENROLLED SUBJECTS</Text>
-                      <Text style={[styles.colHeader, { flex: 2.5, textAlign: 'right' }]}>ACTIONS</Text>
-                    </View>
-
-                    {accounts.length === 0 ? (
-                      <View style={styles.emptyTable}>
-                        <Text style={styles.emptyTableText}>No accounts found matching the filter criteria.</Text>
-                      </View>
-                    ) : (
-                      accounts.map((acc, idx) => (
-                        <View key={acc._id} style={[styles.tableRow, idx % 2 === 1 && styles.tableRowAlt]}>
-                          <View style={{ flex: 2.2 }}>
-                            <Text style={styles.cellPrimary}>{acc.firstName} {acc.lastName}</Text>
-                            <Text style={styles.cellSub}>ID: {acc._id.slice(-6).toUpperCase()}</Text>
-                          </View>
-
-                          <View style={{ flex: 2.5 }}>
-                            <Text style={styles.cellText} numberOfLines={1}>{acc.email}</Text>
-                            <Text style={styles.cellSub}>@{acc.username}</Text>
-                          </View>
-
-                          <View style={{ flex: 1.8 }}>
-                            <View style={[
-                              styles.roleBadge,
-                              acc.role === 'student' ? styles.badgeStudent :
-                              acc.role === 'faculty' ? styles.badgeFaculty : styles.badgeChair
-                            ]}>
-                              <Text style={[
-                                styles.roleBadgeText,
-                                acc.role === 'student' ? styles.badgeTextStudent :
-                                acc.role === 'faculty' ? styles.badgeTextFaculty : styles.badgeTextChair
-                              ]}>
-                                {acc.role === 'program chair' || acc.role === 'program_chair' ? 'CHAIR' : acc.role.toUpperCase()}
-                              </Text>
-                            </View>
-                          </View>
-
-                          <View style={{ flex: 2 }}>
-                            {acc.role === 'student' ? (
-                              <Text style={styles.cellCohortText}>
-                                {acc.yearLevel || '1st Year'} • {acc.activeSemester || '1st Sem'}
-                              </Text>
-                            ) : (
-                              <Text style={styles.cellMuted}>Academic Staff</Text>
-                            )}
-                          </View>
-
-                          {/* Enrolled Subjects List & Direct Enroll Trigger */}
-                          <View style={{ flex: 2.5 }}>
-                            {acc.role === 'student' ? (
-                              <View style={styles.enrolledListRow}>
-                                {acc.enrolledSubjects && acc.enrolledSubjects.length > 0 ? (
-                                  acc.enrolledSubjects.map((s, i) => (
-                                    <Pressable
-                                      key={i}
-                                      style={styles.enrolledChip}
-                                      onPress={() => s.id && handleUnenrollDirect(acc._id, s.id)}
-                                    >
-                                      <Text style={styles.enrolledChipText}>{s.code} ✕</Text>
-                                    </Pressable>
-                                  ))
-                                ) : (
-                                  <Text style={styles.unassignedText}>No subjects enrolled</Text>
-                                )}
-                                <Pressable style={styles.addEnrollBtn} onPress={() => handleOpenDirectEnroll(acc)}>
-                                  <Text style={styles.addEnrollText}>+ Enroll</Text>
-                                </Pressable>
-                              </View>
-                            ) : (
-                              <Text style={styles.cellMuted}>N/A (Staff)</Text>
-                            )}
-                          </View>
-
-                          {/* Actions: Edit Account / Role & Delete (NO cycle button!) */}
-                          <View style={[styles.actionsCell, { flex: 2.5 }]}>
-                            <Pressable style={styles.editBtn} onPress={() => handleOpenEditModal(acc)}>
-                              <Text style={styles.editBtnText}>Edit Role / User</Text>
-                            </Pressable>
-                            <Pressable style={styles.deleteBtn} onPress={() => handleDeleteAccount(acc)}>
-                              <Text style={styles.deleteBtnText}>Delete</Text>
-                            </Pressable>
-                          </View>
-                        </View>
-                      ))
-                    )}
-                  </View>
-                </ScrollView>
-              )}
-            </View>
-          )}
-
-          {/* ══════════════════════════════════════════════════════════ */}
-          {/* TAB 4: ENROLLMENT ENGINE ═════════════════════════════════ */}
-          {/* ══════════════════════════════════════════════════════════ */}
-          {activeTab === 'enrollment' && (
-            <View style={styles.panel}>
-              <View style={styles.panelHeader}>
-                <View>
-                  <Text style={styles.panelTitle}>Curriculum Enrollment Engine</Text>
-                  <Text style={styles.panelSub}>
-                    Enroll students into specific curriculum subjects before they can access course materials.
-                  </Text>
-                </View>
-              </View>
-
-              {feedbackMsg ? (
-                <View style={[styles.noticeBanner, feedbackMsg.includes('failed') ? styles.noticeError : styles.noticeSuccess]}>
-                  <Text style={styles.noticeText}>{feedbackMsg}</Text>
-                </View>
-              ) : null}
-
-              {/* Step 1: Cohort Matching Criteria */}
-              <View style={styles.engineConfigCard}>
-                <Text style={styles.cardSectionTitle}>STEP 1: SELECT COHORT CRITERIA TO ENROLL</Text>
-                <View style={styles.criteriaGrid}>
-                  <View style={styles.criteriaField}>
-                    <Text style={styles.fieldLabel}>Target Year Level:</Text>
-                    <View style={styles.chipRow}>
-                      {YEAR_LEVELS.map(y => (
-                        <Pressable
-                          key={y}
-                          style={[styles.filterChip, enrollCriteriaYear === y && styles.filterChipActive]}
-                          onPress={() => setEnrollCriteriaYear(y)}
-                        >
-                          <Text style={[styles.filterChipText, enrollCriteriaYear === y && styles.filterChipTextActive]}>{y}</Text>
-                        </Pressable>
-                      ))}
-                    </View>
-                  </View>
-
-                  <View style={styles.criteriaField}>
-                    <Text style={styles.fieldLabel}>Active Term / Semester:</Text>
-                    <View style={styles.chipRow}>
-                      {SEMESTERS.map(s => (
-                        <Pressable
-                          key={s}
-                          style={[styles.filterChip, enrollCriteriaSem === s && styles.filterChipActive]}
-                          onPress={() => setEnrollCriteriaSem(s)}
-                        >
-                          <Text style={[styles.filterChipText, enrollCriteriaSem === s && styles.filterChipTextActive]}>{s}</Text>
-                        </Pressable>
-                      ))}
-                    </View>
-                  </View>
-
-                  <View style={styles.criteriaField}>
-                    <Text style={styles.fieldLabel}>School Year:</Text>
-                    <View style={styles.chipRow}>
-                      {SCHOOL_YEARS.map(sy => (
-                        <Pressable
-                          key={sy}
-                          style={[styles.filterChip, enrollCriteriaSY === sy && styles.filterChipActive]}
-                          onPress={() => setEnrollCriteriaSY(sy)}
-                        >
-                          <Text style={[styles.filterChipText, enrollCriteriaSY === sy && styles.filterChipTextActive]}>{sy}</Text>
-                        </Pressable>
-                      ))}
-                    </View>
-                  </View>
-                </View>
-
-                <View style={{ marginTop: 18 }}>
-                  <Button
-                    title={previewLoading ? 'Simulating Matches...' : 'Run Enrollment Simulation'}
-                    variant="primary"
-                    size="md"
-                    loading={previewLoading}
-                    onPress={handlePreviewEnrollment}
-                  />
-                </View>
-              </View>
-
-              {/* Step 2: Simulation Preview */}
-              {previewData && (
-                <View style={styles.simulationCard}>
-                  <Text style={styles.cardSectionTitle}>STEP 2: ENROLLMENT MATCHING MATRIX</Text>
-                  <View style={styles.matrixMetrics}>
-                    <View style={styles.matrixPill}>
-                      <Text style={styles.matrixPillVal}>{previewData.matchedStudentsCount}</Text>
-                      <Text style={styles.matrixPillLabel}>Matching Students</Text>
-                    </View>
-                    <View style={styles.matrixPill}>
-                      <Text style={styles.matrixPillVal}>{previewData.matchedSubjectsCount}</Text>
-                      <Text style={styles.matrixPillLabel}>Matching Subjects</Text>
-                    </View>
-                    <View style={[styles.matrixPill, { backgroundColor: '#E8F8F5' }]}>
-                      <Text style={[styles.matrixPillVal, { color: '#27AE60' }]}>{previewData.potentialEnrollmentCount}</Text>
-                      <Text style={styles.matrixPillLabel}>New Access Grants</Text>
-                    </View>
-                  </View>
-
-                  <View style={{ marginTop: 16 }}>
-                    <Text style={styles.fieldLabel}>Subjects in Cohort:</Text>
-                    <View style={styles.chipRow}>
-                      {previewData.matchingSubjects.map(s => (
-                        <View key={s.id} style={styles.subjectGrantTag}>
-                          <Text style={styles.subjectGrantCode}>{s.code}</Text>
-                          <Text style={styles.subjectGrantName}>{s.name}</Text>
-                        </View>
-                      ))}
-                    </View>
-                  </View>
-
-                  <View style={styles.executeRow}>
-                    <Text style={styles.executeNotice}>
-                      Executing will grant access to all {previewData.matchedStudentsCount} students for these curriculum subjects. Students cannot view or access subjects until enrolled.
-                    </Text>
-                    <Button
-                      title={actionLoading ? 'Committing...' : 'Confirm & Execute Enrollment'}
-                      variant="primary"
-                      size="lg"
-                      loading={actionLoading}
-                      disabled={previewData.potentialEnrollmentCount === 0}
-                      onPress={handleExecuteSmartEnrollment}
-                    />
-                  </View>
-                </View>
-              )}
-            </View>
-          )}
-
-        </ScrollView>
+        <Btn
+          label="New account"
+          icon="person-add"
+          small
+          tone="coral"
+          onPress={() => {
+            resetCreateForm();
+            setShowCreateModal(true);
+          }}
+        />
       </View>
 
-      {/* ─── MODAL: EDIT USER & ROLE (Replaces Cycle Role) ───────── */}
-      <Modal visible={showEditModal} transparent animationType="fade">
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalCard}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Edit User Account & Role</Text>
-              <Pressable onPress={() => setShowEditModal(false)}>
-                <Text style={styles.modalClose}>✕</Text>
-              </Pressable>
-            </View>
-
-            {errorMsg ? (
-              <View style={styles.errorNotice}>
-                <Text style={styles.errorNoticeText}>{errorMsg}</Text>
+      <View style={s.shell}>
+        {isDesktop && renderNav()}
+        <View style={{ flex: 1 }}>
+          {!isDesktop && renderNav()}
+          <ScrollView style={{ flex: 1 }} contentContainerStyle={s.workspaceBody} showsVerticalScrollIndicator={false}>
+            <View pointerEvents="none" style={s.blobCoral} />
+            <View pointerEvents="none" style={s.blobBlue} />
+            <Animated.View
+              style={{
+                opacity: tabAnim,
+                transform: [{ translateY: tabAnim.interpolate({ inputRange: [0, 1], outputRange: [14, 0] }) }],
+              }}
+            >
+              {activeTab === 'dashboard' && renderOverview()}
+              {activeTab === 'reports' && renderReports()}
+              {activeTab === 'accounts' && renderAccounts()}
+              {activeTab === 'enrollment' && renderEnrollment()}
+            </Animated.View>
+            {!isDesktop && (
+              <View style={{ marginTop: 28, alignSelf: 'flex-start' }}>
+                <Btn label="Faculty studio" tone="paper" icon="swap-horizontal" onPress={() => router.push('/faculty/dashboard' as any)} />
               </View>
-            ) : null}
+            )}
+          </ScrollView>
+        </View>
+      </View>
 
-            <ScrollView style={styles.modalForm}>
-              <View style={styles.formRow}>
-                <View style={[styles.formField, { flex: 1 }]}>
-                  <Text style={styles.formLabel}>First Name</Text>
-                  <TextInput
-                    style={styles.formInput}
-                    value={editFirstName}
-                    onChangeText={setEditFirstName}
-                  />
-                </View>
-                <View style={[styles.formField, { flex: 1 }]}>
-                  <Text style={styles.formLabel}>Last Name</Text>
-                  <TextInput
-                    style={styles.formInput}
-                    value={editLastName}
-                    onChangeText={setEditLastName}
-                  />
-                </View>
-              </View>
-
-              <View style={styles.formField}>
-                <Text style={styles.formLabel}>Email Address</Text>
-                <TextInput
-                  style={styles.formInput}
-                  value={editEmail}
-                  onChangeText={setEditEmail}
-                  autoCapitalize="none"
-                />
-              </View>
-
-              {/* Explicit Role Selection (Student, Faculty, Chair, Admin) */}
-              <View style={styles.formField}>
-                <Text style={styles.formLabel}>System Role & Privilege</Text>
-                <View style={styles.chipRow}>
-                  {ROLES.map(r => (
-                    <Pressable
-                      key={r.value}
-                      style={[styles.filterChip, editRole === r.value && styles.filterChipActive]}
-                      onPress={() => setEditRole(r.value)}
-                    >
-                      <Text style={[styles.filterChipText, editRole === r.value && styles.filterChipTextActive]}>
-                        {r.label}
-                      </Text>
-                    </Pressable>
-                  ))}
-                </View>
-              </View>
-
-              {editRole === 'student' && (
-                <View style={styles.formRow}>
-                  <View style={[styles.formField, { flex: 1 }]}>
-                    <Text style={styles.formLabel}>Year Level</Text>
-                    {YEAR_LEVELS.map(y => (
-                      <Pressable
-                        key={y}
-                        style={[styles.filterChip, editYearLevel === y && styles.filterChipActive, { marginBottom: 4 }]}
-                        onPress={() => setEditYearLevel(y)}
-                      >
-                        <Text style={[styles.filterChipText, editYearLevel === y && styles.filterChipTextActive]}>{y}</Text>
-                      </Pressable>
-                    ))}
-                  </View>
-                  <View style={[styles.formField, { flex: 1 }]}>
-                    <Text style={styles.formLabel}>Active Semester</Text>
-                    {SEMESTERS.map(s => (
-                      <Pressable
-                        key={s}
-                        style={[styles.filterChip, editSemester === s && styles.filterChipActive, { marginBottom: 4 }]}
-                        onPress={() => setEditSemester(s)}
-                      >
-                        <Text style={[styles.filterChipText, editSemester === s && styles.filterChipTextActive]}>{s}</Text>
-                      </Pressable>
-                    ))}
-                  </View>
-                </View>
-              )}
-            </ScrollView>
-
-            <View style={styles.modalFooter}>
-              <Button title="Cancel" variant="secondary" size="md" onPress={() => setShowEditModal(false)} />
-              <Button
-                title={actionLoading ? 'Saving...' : 'Save User & Role'}
-                variant="primary"
-                size="md"
-                loading={actionLoading}
-                onPress={handleSaveEditAccount}
-              />
-            </View>
+      {/* ───────── edit account ───────── */}
+      <ModalShell
+        visible={showEditModal}
+        title="Edit account"
+        icon="create"
+        onClose={() => setShowEditModal(false)}
+        footer={
+          <>
+            <Btn label="Cancel" tone="paper" onPress={() => setShowEditModal(false)} />
+            <Btn label={actionLoading ? 'Saving…' : 'Save changes'} tone="coral" loading={actionLoading} onPress={handleSaveEditAccount} />
+          </>
+        }
+      >
+        {errorMsg ? (
+          <View style={s.errorNotice}>
+            <Ionicons name="alert-circle" size={18} color={C.red} />
+            <Text style={s.errorNoticeText}>{errorMsg}</Text>
+          </View>
+        ) : null}
+        <View style={s.formRow}>
+          <Field flex label="First name" value={editFirstName} onChangeText={setEditFirstName} />
+          <Field flex label="Last name" value={editLastName} onChangeText={setEditLastName} />
+        </View>
+        <Field label="Email" email value={editEmail} onChangeText={setEditEmail} />
+        <Field label="Username" value={editUsername} onChangeText={setEditUsername} />
+        <View style={s.formField}>
+          <Text style={s.formLabel}>Role</Text>
+          <View style={s.chipRow}>
+            {ROLES.map((r) => (
+              <Chip key={r.value} tone="coral" label={r.label} active={editRole === r.value} onPress={() => setEditRole(r.value)} />
+            ))}
           </View>
         </View>
-      </Modal>
-
-      {/* ─── MODAL: DIRECT STUDENT TO SUBJECT ENROLLMENT ───────── */}
-      <Modal visible={showDirectEnrollModal} transparent animationType="fade">
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalCard}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Enroll Student to Subject</Text>
-              <Pressable onPress={() => setShowDirectEnrollModal(false)}>
-                <Text style={styles.modalClose}>✕</Text>
-              </Pressable>
-            </View>
-
-            <Text style={styles.enrollModalSub}>
-              Granting coursework access for: <Text style={{ fontWeight: '800' }}>{enrollTargetStudent?.firstName} {enrollTargetStudent?.lastName}</Text> ({enrollTargetStudent?.email})
-            </Text>
-
-            {feedbackMsg ? (
-              <View style={[styles.noticeBanner, styles.noticeSuccess]}>
-                <Text style={styles.noticeText}>{feedbackMsg}</Text>
-              </View>
-            ) : null}
-
-            <View style={styles.formField}>
-              <Text style={styles.formLabel}>Select Subject to Enroll:</Text>
-              <ScrollView style={{ maxHeight: 250 }}>
-                {subjects.map(s => (
-                  <Pressable
-                    key={s.id}
-                    style={[styles.subjectOptionCard, selectedSubjectToEnroll === s.id && styles.subjectOptionCardActive]}
-                    onPress={() => setSelectedSubjectToEnroll(s.id)}
-                  >
-                    <View style={styles.courseCodeBadge}>
-                      <Text style={styles.courseCodeText}>{s.code}</Text>
-                    </View>
-                    <View style={{ flex: 1 }}>
-                      <Text style={styles.subjectOptionName}>{s.name}</Text>
-                      <Text style={styles.subjectOptionMeta}>
-                        Instructor: {s.facultyName} • {s.yearLevel} ({s.semester})
-                      </Text>
-                    </View>
-                  </Pressable>
-                ))}
-              </ScrollView>
-            </View>
-
-            <View style={styles.modalFooter}>
-              <Button title="Cancel" variant="secondary" size="md" onPress={() => setShowDirectEnrollModal(false)} />
-              <Button
-                title={actionLoading ? 'Enrolling...' : 'Grant Access & Enroll'}
-                variant="primary"
-                size="md"
-                loading={actionLoading}
-                onPress={handleExecuteDirectEnroll}
-              />
-            </View>
-          </View>
-        </View>
-      </Modal>
-
-      {/* ─── MODAL: PROVISION NEW ACCOUNT ──────────────────────── */}
-      <Modal visible={showCreateModal} transparent animationType="fade">
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalCard}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Provision New Account</Text>
-              <Pressable onPress={() => setShowCreateModal(false)}>
-                <Text style={styles.modalClose}>✕</Text>
-              </Pressable>
-            </View>
-
-            {errorMsg ? (
-              <View style={styles.errorNotice}>
-                <Text style={styles.errorNoticeText}>{errorMsg}</Text>
-              </View>
-            ) : null}
-
-            <ScrollView style={styles.modalForm}>
-              <View style={styles.formRow}>
-                <View style={[styles.formField, { flex: 1 }]}>
-                  <Text style={styles.formLabel}>First Name *</Text>
-                  <TextInput
-                    style={styles.formInput}
-                    placeholder="Jane"
-                    placeholderTextColor={COLORS.textMuted}
-                    value={newFirstName}
-                    onChangeText={setNewFirstName}
-                  />
-                </View>
-                <View style={[styles.formField, { flex: 1 }]}>
-                  <Text style={styles.formLabel}>Last Name *</Text>
-                  <TextInput
-                    style={styles.formInput}
-                    placeholder="Doe"
-                    placeholderTextColor={COLORS.textMuted}
-                    value={newLastName}
-                    onChangeText={setNewLastName}
-                  />
-                </View>
-              </View>
-
-              <View style={styles.formField}>
-                <Text style={styles.formLabel}>Email Address *</Text>
-                <TextInput
-                  style={styles.formInput}
-                  placeholder="jdoe@institution.edu"
-                  placeholderTextColor={COLORS.textMuted}
-                  value={newEmail}
-                  onChangeText={setNewEmail}
-                  keyboardType="email-address"
-                  autoCapitalize="none"
-                />
-              </View>
-
-              <View style={styles.formRow}>
-                <View style={[styles.formField, { flex: 1 }]}>
-                  <Text style={styles.formLabel}>Username *</Text>
-                  <TextInput
-                    style={styles.formInput}
-                    placeholder="jdoe"
-                    placeholderTextColor={COLORS.textMuted}
-                    value={newUsername}
-                    onChangeText={setNewUsername}
-                    autoCapitalize="none"
-                  />
-                </View>
-                <View style={[styles.formField, { flex: 1 }]}>
-                  <Text style={styles.formLabel}>Password *</Text>
-                  <TextInput
-                    style={styles.formInput}
-                    placeholder="Minimum 6 chars"
-                    placeholderTextColor={COLORS.textMuted}
-                    value={newPassword}
-                    onChangeText={setNewPassword}
-                    secureTextEntry
-                  />
-                </View>
-              </View>
-
-              <View style={styles.formField}>
-                <Text style={styles.formLabel}>Role Privilege *</Text>
-                <View style={styles.chipRow}>
-                  {ROLES.slice(0, 3).map(r => (
-                    <Pressable
-                      key={r.value}
-                      style={[styles.filterChip, newRole === r.value && styles.filterChipActive]}
-                      onPress={() => setNewRole(r.value as any)}
-                    >
-                      <Text style={[styles.filterChipText, newRole === r.value && styles.filterChipTextActive]}>
-                        {r.label}
-                      </Text>
-                    </Pressable>
-                  ))}
-                </View>
-              </View>
-            </ScrollView>
-
-            <View style={styles.modalFooter}>
-              <Button title="Cancel" variant="secondary" size="md" onPress={() => setShowCreateModal(false)} />
-              <Button
-                title={actionLoading ? 'Creating...' : 'Create Account'}
-                variant="primary"
-                size="md"
-                loading={actionLoading}
-                onPress={handleCreateAccount}
-              />
-            </View>
-          </View>
-        </View>
-      </Modal>
-
-      {/* ─── MODAL: BATCH COHORT UPDATE ────────────────────────── */}
-      <Modal visible={showBatchModal} transparent animationType="fade">
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalCard}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Batch Cohort Status Update</Text>
-              <Pressable onPress={() => setShowBatchModal(false)}>
-                <Text style={styles.modalClose}>✕</Text>
-              </Pressable>
-            </View>
-
-            <Text style={styles.enrollModalSub}>
-              Batch-updating status for {selectedStudentIds.length} student records.
-            </Text>
-
-            <View style={styles.formField}>
-              <Text style={styles.formLabel}>Target Year Level:</Text>
-              <View style={styles.chipRow}>
-                {YEAR_LEVELS.map(y => (
-                  <Pressable
-                    key={y}
-                    style={[styles.filterChip, batchYearLevel === y && styles.filterChipActive]}
-                    onPress={() => setBatchYearLevel(y)}
-                  >
-                    <Text style={[styles.filterChipText, batchYearLevel === y && styles.filterChipTextActive]}>{y}</Text>
-                  </Pressable>
+        {editRole === 'student' && (
+          <>
+            <View style={s.formField}>
+              <Text style={s.formLabel}>Year level</Text>
+              <View style={s.chipRow}>
+                {YEAR_LEVELS.map((y) => (
+                  <Chip key={y} label={y} active={editYearLevel === y} onPress={() => setEditYearLevel(y)} />
                 ))}
               </View>
             </View>
-
-            <View style={styles.formField}>
-              <Text style={styles.formLabel}>Active Semester:</Text>
-              <View style={styles.chipRow}>
-                {SEMESTERS.map(s => (
-                  <Pressable
-                    key={s}
-                    style={[styles.filterChip, batchSemester === s && styles.filterChipActive]}
-                    onPress={() => setBatchSemester(s)}
-                  >
-                    <Text style={[styles.filterChipText, batchSemester === s && styles.filterChipTextActive]}>{s}</Text>
-                  </Pressable>
+            <View style={s.formField}>
+              <Text style={s.formLabel}>Semester</Text>
+              <View style={s.chipRow}>
+                {SEMESTERS.map((x) => (
+                  <Chip key={x} label={x} active={editSemester === x} onPress={() => setEditSemester(x)} />
                 ))}
               </View>
             </View>
-
-            <View style={styles.modalFooter}>
-              <Button title="Cancel" variant="secondary" size="md" onPress={() => setShowBatchModal(false)} />
-              <Button
-                title={actionLoading ? 'Updating...' : `Update ${selectedStudentIds.length} Students`}
-                variant="primary"
-                size="md"
-                loading={actionLoading}
-                onPress={handleBatchUpdateStatus}
-              />
+            <View style={s.formField}>
+              <Text style={s.formLabel}>School year</Text>
+              <View style={s.chipRow}>
+                {SCHOOL_YEARS.map((x) => (
+                  <Chip key={x} label={x} active={editSchoolYear === x} onPress={() => setEditSchoolYear(x)} />
+                ))}
+              </View>
             </View>
+          </>
+        )}
+      </ModalShell>
+
+      {/* ───────── direct enroll ───────── */}
+      <ModalShell
+        visible={showDirectEnrollModal}
+        title="Enroll in a subject"
+        icon="enter"
+        onClose={() => setShowDirectEnrollModal(false)}
+        footer={
+          <>
+            <Btn label="Cancel" tone="paper" onPress={() => setShowDirectEnrollModal(false)} />
+            <Btn
+              label={actionLoading ? 'Enrolling…' : 'Enroll student'}
+              tone="blue"
+              loading={actionLoading}
+              disabled={!selectedSubjectToEnroll}
+              onPress={handleExecuteDirectEnroll}
+            />
+          </>
+        }
+      >
+        <View style={s.whoRow}>
+          <Avatar first={enrollTargetStudent?.firstName} last={enrollTargetStudent?.lastName} tone={ACCENTS[0]} size={40} />
+          <View style={{ flex: 1 }}>
+            <Text style={s.accName}>{enrollTargetStudent?.firstName} {enrollTargetStudent?.lastName}</Text>
+            <Text style={s.accSub} numberOfLines={1}>{enrollTargetStudent?.email}</Text>
           </View>
         </View>
-      </Modal>
+        {feedbackMsg ? (
+          <View style={[s.notice, { backgroundColor: '#C9F0DD' }]}>
+            <Ionicons name="checkmark-circle" size={20} color={C.ink} />
+            <Text style={s.noticeText}>{feedbackMsg}</Text>
+          </View>
+        ) : null}
+        <Text style={s.formLabel}>Pick a subject</Text>
+        {subjects.map((sub, i) => {
+          const on = selectedSubjectToEnroll === sub.id;
+          return (
+            <Pressable key={sub.id} style={[s.subjectOption, on && s.subjectOptionOn]} onPress={() => setSelectedSubjectToEnroll(sub.id)}>
+              <View style={[s.subjectOptionCode, { backgroundColor: ACCENTS[i % ACCENTS.length].face }]}>
+                <Text style={[s.subjectTagCode, { color: ACCENTS[i % ACCENTS.length].fg }]}>{sub.code}</Text>
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={s.accName} numberOfLines={1}>{sub.name}</Text>
+                <Text style={s.accSub} numberOfLines={1}>{sub.facultyName} · {sub.yearLevel}, {sub.semester}</Text>
+              </View>
+              <Ionicons name={on ? 'radio-button-on' : 'radio-button-off'} size={22} color={on ? C.blue : C.pinkDeep} />
+            </Pressable>
+          );
+        })}
+      </ModalShell>
+
+      {/* ───────── create account ───────── */}
+      <ModalShell
+        visible={showCreateModal}
+        title="New account"
+        icon="person-add"
+        onClose={() => setShowCreateModal(false)}
+        footer={
+          <>
+            <Btn label="Cancel" tone="paper" onPress={() => setShowCreateModal(false)} />
+            <Btn label={actionLoading ? 'Creating…' : 'Create account'} tone="coral" loading={actionLoading} onPress={handleCreateAccount} />
+          </>
+        }
+      >
+        {errorMsg ? (
+          <View style={s.errorNotice}>
+            <Ionicons name="alert-circle" size={18} color={C.red} />
+            <Text style={s.errorNoticeText}>{errorMsg}</Text>
+          </View>
+        ) : null}
+        <View style={s.formRow}>
+          <Field flex label="First name *" placeholder="Jane" value={newFirstName} onChangeText={setNewFirstName} />
+          <Field flex label="Last name *" placeholder="Doe" value={newLastName} onChangeText={setNewLastName} />
+        </View>
+        <Field label="Email *" email placeholder="jdoe@institution.edu" value={newEmail} onChangeText={setNewEmail} />
+        <View style={s.formRow}>
+          <Field flex label="Username *" placeholder="jdoe" value={newUsername} onChangeText={setNewUsername} />
+          <Field flex label="Password *" secure placeholder="At least 6 characters" value={newPassword} onChangeText={setNewPassword} />
+        </View>
+        <View style={s.formField}>
+          <Text style={s.formLabel}>Role</Text>
+          <View style={s.chipRow}>
+            {ROLES.slice(0, 3).map((r) => (
+              <Chip key={r.value} tone="coral" label={r.label} active={newRole === r.value} onPress={() => setNewRole(r.value as any)} />
+            ))}
+          </View>
+        </View>
+        {newRole === 'student' && (
+          <>
+            <View style={s.formField}>
+              <Text style={s.formLabel}>Year level</Text>
+              <View style={s.chipRow}>
+                {YEAR_LEVELS.map((y) => (
+                  <Chip key={y} label={y} active={newYearLevel === y} onPress={() => setNewYearLevel(y)} />
+                ))}
+              </View>
+            </View>
+            <View style={s.formField}>
+              <Text style={s.formLabel}>Semester</Text>
+              <View style={s.chipRow}>
+                {SEMESTERS.map((x) => (
+                  <Chip key={x} label={x} active={newSemester === x} onPress={() => setNewSemester(x)} />
+                ))}
+              </View>
+            </View>
+            <View style={s.formField}>
+              <Text style={s.formLabel}>School year</Text>
+              <View style={s.chipRow}>
+                {SCHOOL_YEARS.map((x) => (
+                  <Chip key={x} label={x} active={newSchoolYear === x} onPress={() => setNewSchoolYear(x)} />
+                ))}
+              </View>
+            </View>
+          </>
+        )}
+      </ModalShell>
+
+      {/* ───────── batch update ───────── */}
+      <ModalShell
+        visible={showBatchModal}
+        title="Move a cohort"
+        icon="swap-vertical"
+        onClose={() => setShowBatchModal(false)}
+        footer={
+          <>
+            <Btn label="Cancel" tone="paper" onPress={() => setShowBatchModal(false)} />
+            <Btn
+              label={actionLoading ? 'Updating…' : `Update ${selectedStudentIds.length} students`}
+              tone="coral"
+              loading={actionLoading}
+              onPress={handleBatchUpdateStatus}
+            />
+          </>
+        }
+      >
+        <View style={[s.notice, { backgroundColor: C.cream }]}>
+          <Ionicons name="people" size={20} color={C.ink} />
+          <Text style={s.noticeText}>
+            {selectedStudentIds.length} student{selectedStudentIds.length === 1 ? '' : 's'} will move to the term below.
+          </Text>
+        </View>
+        <View style={s.formField}>
+          <Text style={s.formLabel}>Year level</Text>
+          <View style={s.chipRow}>
+            {YEAR_LEVELS.map((y) => (
+              <Chip key={y} label={y} active={batchYearLevel === y} onPress={() => setBatchYearLevel(y)} />
+            ))}
+          </View>
+        </View>
+        <View style={s.formField}>
+          <Text style={s.formLabel}>Semester</Text>
+          <View style={s.chipRow}>
+            {SEMESTERS.map((x) => (
+              <Chip key={x} label={x} active={batchSemester === x} onPress={() => setBatchSemester(x)} />
+            ))}
+          </View>
+        </View>
+        <View style={s.formField}>
+          <Text style={s.formLabel}>School year</Text>
+          <View style={s.chipRow}>
+            {SCHOOL_YEARS.map((x) => (
+              <Chip key={x} label={x} active={batchSchoolYear === x} onPress={() => setBatchSchoolYear(x)} />
+            ))}
+          </View>
+        </View>
+      </ModalShell>
     </SafeAreaView>
   );
 }
 
-const styles = StyleSheet.create({
-  safeArea: {
-    flex: 1,
-    backgroundColor: '#F8F9FA',
-  },
+/** Progress track with the mascot riding the fill, like the student trail. */
+function ProgressTrail({ pct, reduce }: { pct: number; reduce: boolean }) {
+  const v = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    Animated.timing(v, {
+      toValue: pct,
+      duration: reduce ? 0 : 1100,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: false,
+    }).start();
+  }, [pct, reduce, v]);
+  const w = v.interpolate({ inputRange: [0, 100], outputRange: ['0%', '100%'], extrapolate: 'clamp' });
+  return (
+    <View style={s.trailTrackWrap}>
+      <View style={s.trailTrack}>
+        <Animated.View style={{ height: '100%', backgroundColor: C.coral, width: w }} />
+      </View>
+      <Animated.View pointerEvents="none" style={[s.trailMarker, { left: w }]}>
+        <Image source={require('@/assets/images/mascot.png')} style={{ width: 44, height: 38 }} resizeMode="contain" />
+      </Animated.View>
+    </View>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/*  Styles                                                             */
+/* ------------------------------------------------------------------ */
+const s = StyleSheet.create({
+  safe: { flex: 1, backgroundColor: C.bg },
+  centered: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: C.bg, padding: 32 },
+  centeredTitle: { fontFamily: F.display, fontSize: 24, color: C.ink, textAlign: 'center' },
+
+  // top bar
   topBar: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    backgroundColor: '#FFFFFF',
-    borderBottomWidth: 1,
-    borderBottomColor: '#E2E8F0',
-    paddingHorizontal: 20,
-    paddingVertical: 14,
-    flexWrap: 'wrap',
-    gap: 10,
-  },
-  topBarLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-  },
-  hamburgerBtn: {
-    padding: 8,
-    borderRadius: 6,
-    borderWidth: 1,
-    borderColor: '#CBD5E1',
-    backgroundColor: '#FFFFFF',
-  },
-  hamburgerIcon: {
-    fontSize: 18,
-    color: '#1A252F',
-    fontWeight: '800',
-  },
-  appTitle: {
-    fontSize: 18,
-    fontWeight: '800',
-    color: '#1A252F',
-    letterSpacing: -0.3,
-  },
-  appSubTitle: {
-    fontSize: 11,
-    color: '#64748B',
-    fontWeight: '500',
-  },
-  topBarRight: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 14,
-  },
-  roleIdentityCard: {
-    alignItems: 'flex-end',
-    marginRight: 6,
-  },
-  roleIdentityPrefix: {
-    fontSize: 9,
-    fontWeight: '800',
-    color: '#94A3B8',
-    letterSpacing: 0.5,
-  },
-  roleIdentityPill: {
-    backgroundColor: '#FDEDEC',
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    borderRadius: 4,
-    marginTop: 2,
-  },
-  roleIdentityPillText: {
-    fontSize: 10,
-    fontWeight: '900',
-    color: '#C0392B',
-    letterSpacing: 0.5,
-  },
-  roleIdentityName: {
-    fontSize: 11,
-    fontWeight: '600',
-    color: '#475569',
-    marginTop: 2,
-  },
-  mainShell: {
-    flex: 1,
-    flexDirection: 'row',
-  },
-  sidebarDesktop: {
-    width: 250,
-    backgroundColor: '#FFFFFF',
-    borderRightWidth: 1,
-    borderRightColor: '#E2E8F0',
-    padding: 16,
-    justifyContent: 'space-between',
-  },
-  sidebarMobileDrawer: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    bottom: 0,
-    width: 280,
-    backgroundColor: '#FFFFFF',
-    zIndex: 999,
-    borderRightWidth: 1,
-    borderRightColor: '#CBD5E1',
-    padding: 16,
-    elevation: 10,
-    shadowColor: '#000',
-    shadowOpacity: 0.2,
-    shadowRadius: 10,
-  },
-  mobileDrawerHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 16,
-    paddingBottom: 8,
-    borderBottomWidth: 1,
-    borderBottomColor: '#E2E8F0',
-  },
-  drawerTitle: {
-    fontSize: 14,
-    fontWeight: '800',
-    color: '#1A252F',
-  },
-  closeDrawerText: {
-    fontSize: 16,
-    color: '#64748B',
-    fontWeight: '700',
-    padding: 4,
-  },
-  sidebarUserCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    marginBottom: 16,
-  },
-  sidebarAvatar: {
-    width: 40,
-    height: 40,
-    borderRadius: 8,
-    backgroundColor: '#C0392B',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  sidebarAvatarText: {
-    color: '#FFFFFF',
-    fontWeight: '800',
-    fontSize: 14,
-  },
-  sidebarUserName: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: '#1A252F',
-  },
-  sidebarUserEmail: {
-    fontSize: 11,
-    color: '#64748B',
-  },
-  sidebarRoleTag: {
-    backgroundColor: '#F1F5F9',
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 4,
-    alignSelf: 'flex-start',
-    marginTop: 4,
-  },
-  sidebarRoleTagText: {
-    fontSize: 9,
-    fontWeight: '800',
-    color: '#475569',
-  },
-  sidebarDivider: {
-    height: 1,
-    backgroundColor: '#E2E8F0',
-    marginBottom: 16,
-  },
-  navMenu: {
-    gap: 6,
-  },
-  navItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingVertical: 10,
-    paddingHorizontal: 12,
-    borderRadius: 6,
-  },
-  navItemActive: {
-    backgroundColor: '#FEF2F2',
-  },
-  navItemText: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: '#64748B',
-  },
-  navItemTextActive: {
-    color: '#C0392B',
-    fontWeight: '800',
-  },
-  navBadge: {
-    backgroundColor: '#F1F5F9',
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    borderRadius: 10,
-  },
-  navBadgeActive: {
-    backgroundColor: '#FDEDEC',
-  },
-  navBadgeText: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: '#64748B',
-  },
-  navBadgeTextActive: {
-    color: '#C0392B',
-  },
-  sidebarFooter: {
-    borderTopWidth: 1,
-    borderTopColor: '#E2E8F0',
-    paddingTop: 14,
-    marginTop: 14,
-  },
-  portalSwitchBtn: {
-    paddingVertical: 8,
-    alignItems: 'center',
-  },
-  portalSwitchText: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: '#C0392B',
-  },
-  workspace: {
-    flex: 1,
-    backgroundColor: '#F8F9FA',
-  },
-  workspaceBody: {
-    padding: 24,
-    maxWidth: 1300,
-    alignSelf: 'center',
-    width: '100%',
-  },
-  panel: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    padding: 20,
-    marginBottom: 20,
-  },
-  panelHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 16,
-  },
-  panelTitle: {
-    fontSize: 16,
-    fontWeight: '800',
-    color: '#1A252F',
-  },
-  panelSub: {
-    fontSize: 12,
-    color: '#64748B',
-    marginTop: 2,
-  },
-  headerBtnGroup: {
-    flexDirection: 'row',
-    gap: 8,
-  },
-  statsGrid: {
-    flexDirection: 'row',
-    gap: 14,
-    marginBottom: 24,
-    flexWrap: 'wrap',
-  },
-  kpiCard: {
-    flex: 1,
-    minWidth: 160,
-    backgroundColor: '#FFFFFF',
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    padding: 18,
-  },
-  kpiLabel: {
-    fontSize: 10,
-    fontWeight: '800',
-    color: '#64748B',
-    letterSpacing: 0.5,
-  },
-  kpiValue: {
-    fontSize: 28,
-    fontWeight: '800',
-    color: '#1A252F',
-    marginVertical: 4,
-  },
-  kpiSub: {
-    fontSize: 11,
-    color: '#94A3B8',
-  },
-  dashboardSection: {
-    marginBottom: 24,
-  },
-  sectionHeading: {
-    fontSize: 15,
-    fontWeight: '800',
-    color: '#1A252F',
-    marginBottom: 14,
-  },
-  curriculumGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 14,
-  },
-  curriculumCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    padding: 16,
-    width: '31%',
-    minWidth: 260,
-  },
-  curriculumTop: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 8,
-  },
-  courseCodeBadge: {
-    backgroundColor: '#FDEDEC',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 4,
-  },
-  courseCodeText: {
-    fontSize: 11,
-    fontWeight: '800',
-    color: '#C0392B',
-  },
-  enrollPill: {
-    backgroundColor: '#E8F8F5',
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 4,
-  },
-  enrollPillText: {
-    fontSize: 10,
-    fontWeight: '700',
-    color: '#27AE60',
-  },
-  curriculumName: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: '#1A252F',
-    marginBottom: 4,
-  },
-  curriculumFaculty: {
-    fontSize: 12,
-    color: '#64748B',
-  },
-  curriculumMeta: {
-    fontSize: 11,
-    color: '#94A3B8',
-    marginTop: 2,
-    marginBottom: 12,
-  },
-  curriculumActions: {
-    borderTopWidth: 1,
-    borderTopColor: '#F1F5F9',
-    paddingTop: 10,
-    alignItems: 'flex-start',
-  },
-  filtersBar: {
-    backgroundColor: '#FAFAFA',
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    borderRadius: 6,
-    padding: 14,
-    marginBottom: 16,
-    gap: 12,
-  },
-  searchInput: {
-    backgroundColor: '#FFFFFF',
-    borderWidth: 1,
-    borderColor: '#CBD5E1',
-    borderRadius: 6,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    fontSize: 13,
-    color: '#1A252F',
-  },
-  filterRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 16,
-    alignItems: 'center',
-  },
-  filterItem: {
-    gap: 4,
-  },
-  filterTitle: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: '#475569',
-  },
-  chipScroll: {
-    flexDirection: 'row',
-  },
-  chipRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 6,
-  },
-  filterChip: {
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 5,
-    borderWidth: 1,
-    borderColor: '#CBD5E1',
-    backgroundColor: '#FFFFFF',
-    marginRight: 6,
-  },
-  filterChipActive: {
-    backgroundColor: '#1A252F',
-    borderColor: '#1A252F',
-  },
-  filterChipText: {
-    fontSize: 11,
-    fontWeight: '600',
-    color: '#475569',
-  },
-  filterChipTextActive: {
-    color: '#FFFFFF',
-  },
-  table: {
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    borderRadius: 6,
-    overflow: 'hidden',
-  },
-  tableHeader: {
-    flexDirection: 'row',
-    backgroundColor: '#F1F5F9',
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    borderBottomWidth: 1,
-    borderBottomColor: '#E2E8F0',
-    alignItems: 'center',
-  },
-  colHeader: {
-    fontSize: 10,
-    fontWeight: '800',
-    color: '#475569',
-    letterSpacing: 0.5,
-  },
-  tableRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: '#F1F5F9',
-    backgroundColor: '#FFFFFF',
-  },
-  tableRowAlt: {
-    backgroundColor: '#FAFAFA',
-  },
-  cellPrimary: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: '#1A252F',
-  },
-  cellSub: {
-    fontSize: 11,
-    color: '#94A3B8',
-    marginTop: 2,
-  },
-  cellText: {
-    fontSize: 12,
-    color: '#334155',
-  },
-  cellCodeText: {
-    fontSize: 12,
-    fontWeight: '800',
-    color: '#C0392B',
-  },
-  cellCohortText: {
-    fontSize: 11,
-    fontWeight: '600',
-    color: '#334155',
-  },
-  cellMuted: {
-    fontSize: 11,
-    color: '#94A3B8',
-  },
-  roleBadge: {
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 4,
-    alignSelf: 'flex-start',
-  },
-  badgeStudent: { backgroundColor: '#E8F8F5' },
-  badgeFaculty: { backgroundColor: '#EBF5FB' },
-  badgeChair: { backgroundColor: '#FDEDEC' },
-  roleBadgeText: {
-    fontSize: 10,
-    fontWeight: '800',
-    letterSpacing: 0.5,
-  },
-  badgeTextStudent: { color: '#27AE60' },
-  badgeTextFaculty: { color: '#2980B9' },
-  badgeTextChair: { color: '#C0392B' },
-  enrolledListRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 4,
-    alignItems: 'center',
-  },
-  enrolledChip: {
-    backgroundColor: '#F1F5F9',
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 4,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-  },
-  enrolledChipText: {
-    fontSize: 10,
-    fontWeight: '700',
-    color: '#1E293B',
-  },
-  unassignedText: {
-    fontSize: 11,
-    color: '#94A3B8',
-    fontStyle: 'italic',
-  },
-  addEnrollBtn: {
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 4,
-    borderWidth: 1,
-    borderColor: '#C0392B',
-  },
-  addEnrollText: {
-    fontSize: 10,
-    fontWeight: '700',
-    color: '#C0392B',
-  },
-  actionsCell: {
-    flexDirection: 'row',
-    justifyContent: 'flex-end',
-    gap: 6,
-  },
-  editBtn: {
-    paddingHorizontal: 8,
-    paddingVertical: 5,
-    borderRadius: 4,
-    borderWidth: 1,
-    borderColor: '#CBD5E1',
-    backgroundColor: '#FFFFFF',
-  },
-  editBtnText: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: '#1E293B',
-  },
-  deleteBtn: {
-    paddingHorizontal: 8,
-    paddingVertical: 5,
-    borderRadius: 4,
-    borderWidth: 1,
-    borderColor: '#FCA5A5',
-    backgroundColor: '#FEF2F2',
-  },
-  deleteBtnText: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: '#DC2626',
-  },
-  emptyTable: {
-    padding: 30,
-    alignItems: 'center',
-  },
-  emptyTableText: {
-    fontSize: 13,
-    color: '#94A3B8',
-  },
-  loadingPad: {
-    padding: 40,
-    alignItems: 'center',
-  },
-  loadingText: {
-    fontSize: 13,
-    color: '#64748B',
-    marginTop: 8,
-    fontWeight: '600',
-  },
-  enrollBadge: {
-    backgroundColor: '#F1F5F9',
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 4,
-  },
-  enrollBadgeText: {
-    fontSize: 11,
-    fontWeight: '800',
-    color: '#1E293B',
-  },
-  progressRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  progressBarBg: {
-    flex: 1,
-    height: 6,
-    backgroundColor: '#E2E8F0',
-    borderRadius: 3,
-    overflow: 'hidden',
-  },
-  progressBarFill: {
-    height: '100%',
-    backgroundColor: '#C0392B',
-  },
-  progressText: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: '#334155',
-    width: 32,
-  },
-  completedCountText: {
-    fontSize: 12,
-    fontWeight: '800',
-    color: '#27AE60',
-  },
-  noticeBanner: {
-    padding: 12,
-    borderRadius: 6,
-    marginBottom: 16,
-  },
-  noticeSuccess: {
-    backgroundColor: '#E8F8F5',
-  },
-  noticeError: {
-    backgroundColor: '#FDEDEC',
-  },
-  noticeText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#1A252F',
-  },
-  engineConfigCard: {
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    borderRadius: 6,
-    padding: 18,
-    backgroundColor: '#FAFAFA',
-    marginBottom: 20,
-  },
-  cardSectionTitle: {
-    fontSize: 11,
-    fontWeight: '800',
-    color: '#475569',
-    letterSpacing: 0.5,
-    marginBottom: 14,
-  },
-  criteriaGrid: {
-    gap: 14,
-  },
-  criteriaField: {
-    gap: 6,
-  },
-  fieldLabel: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: '#334155',
-  },
-  simulationCard: {
-    borderWidth: 1,
-    borderColor: '#CBD5E1',
-    borderRadius: 6,
-    padding: 20,
-    backgroundColor: '#FFFFFF',
-  },
-  matrixMetrics: {
-    flexDirection: 'row',
-    gap: 12,
-    marginBottom: 16,
-  },
-  matrixPill: {
-    backgroundColor: '#F1F5F9',
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    borderRadius: 6,
-    alignItems: 'center',
-    flex: 1,
-  },
-  matrixPillVal: {
-    fontSize: 22,
-    fontWeight: '800',
-    color: '#1E293B',
-  },
-  matrixPillLabel: {
-    fontSize: 10,
-    fontWeight: '700',
-    color: '#64748B',
-    marginTop: 2,
-    textTransform: 'uppercase',
-  },
-  subjectGrantTag: {
-    backgroundColor: '#F8F9FA',
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    borderRadius: 6,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-  subjectGrantCode: {
-    fontSize: 11,
-    fontWeight: '800',
-    color: '#C0392B',
-  },
-  subjectGrantName: {
-    fontSize: 11,
-    fontWeight: '600',
-    color: '#334155',
-  },
-  executeRow: {
-    borderTopWidth: 1,
-    borderTopColor: '#E2E8F0',
-    paddingTop: 16,
-    marginTop: 16,
-    alignItems: 'flex-start',
-    gap: 12,
-  },
-  executeNotice: {
-    fontSize: 12,
-    color: '#64748B',
-    lineHeight: 18,
-  },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.5)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 20,
-  },
-  modalCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 8,
-    width: '100%',
-    maxWidth: 580,
-    maxHeight: '90%',
-    padding: 20,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-  },
-  modalHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    borderBottomWidth: 1,
-    borderBottomColor: '#E2E8F0',
-    paddingBottom: 12,
-    marginBottom: 14,
-  },
-  modalTitle: {
-    fontSize: 16,
-    fontWeight: '800',
-    color: '#1A252F',
-  },
-  modalClose: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#94A3B8',
-  },
-  enrollModalSub: {
-    fontSize: 12,
-    color: '#64748B',
-    marginBottom: 14,
-  },
-  subjectOptionCard: {
-    backgroundColor: '#FFFFFF',
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    borderRadius: 6,
-    padding: 12,
-    marginBottom: 8,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-  },
-  subjectOptionCardActive: {
-    borderColor: '#C0392B',
-    backgroundColor: '#FEF2F2',
-  },
-  subjectOptionName: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: '#1A252F',
-  },
-  subjectOptionMeta: {
-    fontSize: 11,
-    color: '#64748B',
-    marginTop: 2,
-  },
-  errorNotice: {
-    backgroundColor: '#FDEDEC',
-    padding: 10,
-    borderRadius: 6,
-    marginBottom: 12,
-  },
-  errorNoticeText: {
-    fontSize: 12,
-    color: '#C0392B',
-    fontWeight: '600',
-  },
-  modalForm: {
-    maxHeight: 450,
-  },
-  formRow: {
-    flexDirection: 'row',
-    gap: 12,
-  },
-  formField: {
-    marginBottom: 14,
-  },
-  formLabel: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: '#334155',
-    marginBottom: 6,
-  },
-  formInput: {
-    backgroundColor: '#F8F9FA',
-    borderWidth: 1,
-    borderColor: '#CBD5E1',
-    borderRadius: 6,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    fontSize: 13,
-    color: '#1A252F',
-  },
-  modalFooter: {
-    flexDirection: 'row',
-    justifyContent: 'flex-end',
-    gap: 10,
-    borderTopWidth: 1,
-    borderTopColor: '#E2E8F0',
-    paddingTop: 14,
-    marginTop: 10,
-  },
+    flexDirection: 'row', alignItems: 'center', gap: 12, flexWrap: 'wrap',
+    backgroundColor: C.paper, borderBottomWidth: 3, borderBottomColor: C.ink,
+    paddingHorizontal: 16, paddingVertical: 8, zIndex: 20,
+  },
+  mascotBtn: { marginRight: 2 },
+  appTitle: { fontFamily: F.display, fontSize: 22, color: C.ink },
+  appSub: { fontFamily: F.medium, fontSize: 12, color: C.muted },
+  topIdentity: { backgroundColor: C.cream, borderWidth: 2, borderColor: C.ink, borderRadius: 999, paddingHorizontal: 10, paddingVertical: 3 },
+  topIdentityText: { fontFamily: F.bold, fontSize: 12, color: C.ink },
+
+  shell: { flex: 1, flexDirection: 'row' },
+  workspaceBody: { padding: 22, paddingBottom: 80, maxWidth: 1180, width: '100%', alignSelf: 'center' },
+  blobCoral: { position: 'absolute', width: 260, height: 260, borderRadius: 999, top: -120, right: -100, backgroundColor: C.coral, opacity: 0.85 },
+  blobBlue: { position: 'absolute', width: 180, height: 180, borderRadius: 999, top: 520, left: -110, backgroundColor: C.blue, opacity: 0.8 },
+
+  // sidebar
+  sidebar: { width: 262, padding: 18, backgroundColor: C.bg, borderRightWidth: 3, borderRightColor: C.ink },
+  profileCard: { marginBottom: 4 },
+  profileShadow: { position: 'absolute', top: 7, left: 7, right: -7, bottom: -7, borderRadius: 22, backgroundColor: C.coral },
+  profileFace: { backgroundColor: C.paper, borderRadius: 22, borderWidth: 3, borderColor: C.ink, padding: 16, alignItems: 'center' },
+  bigAvatar: { width: 64, height: 64, borderRadius: 32, backgroundColor: C.blue, borderWidth: 3, borderColor: C.ink, alignItems: 'center', justifyContent: 'center', marginBottom: 8 },
+  bigAvatarText: { fontFamily: F.display, fontSize: 24, color: '#FFFFFF' },
+  profileName: { fontFamily: F.bold, fontSize: 16, color: C.ink },
+  profileEmail: { fontFamily: F.medium, fontSize: 12, color: C.muted, marginTop: 1 },
+  rolePill: { backgroundColor: C.yellow, borderWidth: 2, borderColor: C.ink, borderRadius: 999, paddingHorizontal: 12, paddingVertical: 3, marginTop: 8, transform: [{ rotate: '-2deg' }] },
+  rolePillText: { fontFamily: F.bold, fontSize: 12, color: C.ink },
+  navFace: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 14, paddingVertical: 12 },
+  navFaceSm: { flexDirection: 'row', alignItems: 'center', gap: 7, paddingHorizontal: 12, paddingVertical: 8 },
+  navText: { fontFamily: F.bold, fontSize: 14, color: C.ink, flex: 0 },
+  navBadge: { marginLeft: 'auto', backgroundColor: C.cream, borderWidth: 2, borderColor: C.ink, borderRadius: 999, paddingHorizontal: 8, minWidth: 28, alignItems: 'center' },
+  navBadgeText: { fontFamily: F.bold, fontSize: 11, color: C.ink },
+  mobileNav: { paddingHorizontal: 16, paddingTop: 12, paddingBottom: 6, gap: 10 },
+
+  // buttons
+  btnFace: { paddingHorizontal: 20, height: 48, alignItems: 'center', justifyContent: 'center' },
+  btnFaceSm: { paddingHorizontal: 12, height: 36, alignItems: 'center', justifyContent: 'center' },
+  btnText: { fontFamily: F.display, fontSize: 15, letterSpacing: 0.3 },
+  btnTextSm: { fontFamily: F.bold, fontSize: 13 },
+
+  // bubble
+  bubble: { maxWidth: 240, backgroundColor: '#FFFFFF', borderWidth: 2.5, borderColor: C.ink, borderRadius: 18, paddingHorizontal: 14, paddingVertical: 9 },
+  bubbleText: { fontFamily: F.medium, fontSize: 14, color: C.ink },
+  bubbleTail: { position: 'absolute', top: -8, left: 22, width: 12, height: 12, backgroundColor: '#FFFFFF', borderLeftWidth: 2.5, borderTopWidth: 2.5, borderColor: C.ink, transform: [{ rotate: '45deg' }] },
+
+  // sections
+  sectionHead: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 6 },
+  h2: { fontFamily: F.display, fontSize: 30, lineHeight: 34, color: C.ink },
+  lead: { fontFamily: F.medium, fontSize: 15, lineHeight: 22, color: C.muted, marginBottom: 18, maxWidth: 620 },
+  countPill: { backgroundColor: C.blue, borderWidth: 2.5, borderColor: C.ink, borderRadius: 999, minWidth: 34, height: 30, paddingHorizontal: 10, alignItems: 'center', justifyContent: 'center' },
+  countPillText: { fontFamily: F.bold, fontSize: 14, color: '#FFFFFF' },
+
+  // stats
+  statRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 16, marginTop: 6, marginBottom: 36 },
+  statIcon: { width: 28, height: 28, borderRadius: 14, backgroundColor: C.paper, borderWidth: 2, borderColor: C.ink, alignItems: 'center', justifyContent: 'center', marginBottom: 8 },
+  statValue: { fontFamily: F.display, fontSize: 36, lineHeight: 40 },
+  statLabel: { fontFamily: F.bold, fontSize: 14, marginTop: 2 },
+
+  // folders
+  grid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', rowGap: 24 },
+  folderShadow: { position: 'absolute', left: 0, right: 0, borderRadius: 20, borderWidth: 2.5, borderColor: C.ink },
+  folderTab: { alignSelf: 'flex-start', flexDirection: 'row', alignItems: 'center', gap: 7, minWidth: 120, maxWidth: '70%', height: 38, paddingHorizontal: 14, borderWidth: 2.5, borderBottomWidth: 0, borderColor: C.ink, borderTopLeftRadius: 16, borderTopRightRadius: 16, marginBottom: -2.5, zIndex: 3 },
+  folderTabText: { fontFamily: F.display, fontSize: 14, flexShrink: 1 },
+  folderBody: { borderWidth: 2.5, borderColor: C.ink, borderTopLeftRadius: 0, borderTopRightRadius: 20, borderBottomLeftRadius: 20, borderBottomRightRadius: 20, padding: 14, zIndex: 2 },
+  folderSheet: { position: 'absolute', top: 6, left: 140, right: 22, height: 40, backgroundColor: '#FFFFFF', borderWidth: 2.5, borderColor: C.ink, borderTopLeftRadius: 10, borderTopRightRadius: 10, paddingHorizontal: 12, paddingTop: 7, gap: 4, zIndex: 1 },
+  sheetLine: { height: 3, width: '85%', borderRadius: 2, backgroundColor: C.pink },
+  folderLabel: { flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: C.paper, borderWidth: 2.5, borderColor: C.ink, borderRadius: 14, padding: 14 },
+  courseTitle: { fontFamily: F.bold, fontSize: 18, lineHeight: 24, color: C.ink },
+  courseMeta: { fontFamily: F.medium, fontSize: 13, color: C.muted },
+  infoLine: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  enrollTag: { flexDirection: 'row', alignItems: 'center', gap: 6, alignSelf: 'flex-start', backgroundColor: C.green, borderWidth: 2, borderColor: C.ink, borderRadius: 999, paddingHorizontal: 10, paddingVertical: 3, marginTop: 10 },
+  enrollTagText: { fontFamily: F.bold, fontSize: 12, color: '#FFFFFF' },
+  courseGo: { width: 44, height: 44, borderRadius: 22, backgroundColor: C.yellow, borderWidth: 2.5, borderColor: C.ink, alignItems: 'center', justifyContent: 'center' },
+
+  // filter drawer + chips
+  drawer: { backgroundColor: C.paper, borderWidth: 3, borderColor: C.ink, borderRadius: 18, marginBottom: 18, overflow: 'hidden' },
+  drawerHead: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 14, paddingVertical: 12 },
+  drawerIcon: { width: 28, height: 28, borderRadius: 14, backgroundColor: C.yellow, borderWidth: 2, borderColor: C.ink, alignItems: 'center', justifyContent: 'center' },
+  drawerTitle: { fontFamily: F.bold, fontSize: 15, color: C.ink },
+  drawerCount: { backgroundColor: C.coral, borderRadius: 999, paddingHorizontal: 9, paddingVertical: 2, borderWidth: 2, borderColor: C.ink },
+  drawerCountText: { fontFamily: F.bold, fontSize: 11, color: C.cream },
+  clearText: { fontFamily: F.bold, fontSize: 13, color: C.coralDeep, marginRight: 8 },
+  drawerBody: { padding: 14, paddingTop: 4, gap: 14, borderTopWidth: 2, borderTopColor: C.pink },
+  filterTitle: { fontFamily: F.bold, fontSize: 13, color: C.muted },
+  chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  chip: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 12, paddingVertical: 6, borderRadius: 999, borderWidth: 2, borderColor: C.ink, backgroundColor: '#FFFFFF' },
+  chipText: { fontFamily: F.bold, fontSize: 12, color: C.ink },
+
+  // search
+  searchRow: { flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: '#FFFFFF', borderWidth: 3, borderColor: C.ink, borderRadius: 18, paddingLeft: 14, paddingRight: 8, paddingVertical: 8, marginBottom: 14 },
+  searchInput: { flex: 1, fontFamily: F.medium, fontSize: 15, color: C.ink, paddingVertical: 6, outlineStyle: 'none' as any },
+
+  // select bar
+  selectBar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 10, marginBottom: 14 },
+  selectAll: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  selectAllText: { fontFamily: F.bold, fontSize: 13, color: C.ink },
+  check: { width: 24, height: 24, borderRadius: 8, borderWidth: 2.5, borderColor: C.ink, backgroundColor: '#FFFFFF', alignItems: 'center', justifyContent: 'center' },
+  checkOn: { backgroundColor: C.blue },
+
+  // account cards
+  avatar: { borderWidth: 2.5, borderColor: C.ink, alignItems: 'center', justifyContent: 'center' },
+  avatarText: { fontFamily: F.display },
+  accCard: { backgroundColor: C.paper, borderWidth: 3, borderColor: C.ink, borderRadius: 20, padding: 14, gap: 12 },
+  accCardPicked: { backgroundColor: C.cream, borderColor: C.blueDeep },
+  accTop: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  accName: { fontFamily: F.bold, fontSize: 16, color: C.ink },
+  accSub: { fontFamily: F.medium, fontSize: 12, color: C.muted, marginTop: 1 },
+  roleBadge: { borderWidth: 2, borderColor: C.ink, borderRadius: 999, paddingHorizontal: 11, paddingVertical: 3 },
+  roleBadgeText: { fontFamily: F.bold, fontSize: 12 },
+  accMid: { gap: 10, backgroundColor: '#FFFFFF', borderWidth: 2, borderColor: C.pink, borderRadius: 14, padding: 10 },
+  cohortTag: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  cohortText: { fontFamily: F.bold, fontSize: 12, color: C.ink },
+  enrolledRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, alignItems: 'center' },
+  enrolledChip: { flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: C.pink, borderWidth: 2, borderColor: C.ink, borderRadius: 999, paddingLeft: 10, paddingRight: 6, paddingVertical: 3 },
+  enrolledChipText: { fontFamily: F.bold, fontSize: 12, color: C.ink },
+  unassignedText: { fontFamily: F.medium, fontSize: 13, color: C.muted, fontStyle: 'italic' },
+  addEnrollBtn: { flexDirection: 'row', alignItems: 'center', gap: 2, paddingHorizontal: 10, paddingVertical: 3, borderRadius: 999, borderWidth: 2, borderStyle: 'dashed', borderColor: C.blueDeep },
+  addEnrollText: { fontFamily: F.bold, fontSize: 12, color: C.blueDeep },
+  staffNote: { fontFamily: F.medium, fontSize: 13, color: C.muted },
+  accActions: { flexDirection: 'row', gap: 10, justifyContent: 'flex-end' },
+
+  // reports
+  window: { backgroundColor: C.paper, borderWidth: 3, borderColor: C.ink, borderRadius: 24, overflow: 'hidden' },
+  windowBar: { height: 44, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, gap: 7, borderBottomWidth: 3, borderBottomColor: C.ink, backgroundColor: C.blue },
+  dot: { width: 11, height: 11, borderRadius: 6, backgroundColor: C.paper, borderWidth: 2, borderColor: C.ink },
+  windowTitle: { fontFamily: F.bold, fontSize: 15, color: '#FFFFFF', marginLeft: 8 },
+  summaryBody: { padding: 20, flexDirection: 'row', flexWrap: 'wrap', gap: 20, alignItems: 'center' },
+  trailBig: { fontFamily: F.display, fontSize: 38, color: C.ink },
+  trailBigSub: { fontFamily: F.medium, fontSize: 15, color: C.muted },
+  trailTrackWrap: { marginTop: 40, marginBottom: 4, marginHorizontal: 20, justifyContent: 'center' },
+  trailTrack: { height: 16, borderRadius: 9, borderWidth: 2.5, borderColor: C.ink, backgroundColor: C.pink, overflow: 'hidden' },
+  trailMarker: { position: 'absolute', top: -34, marginLeft: -22 },
+  miniStats: { flexDirection: 'row', gap: 12, flexGrow: 1, flexBasis: 220 },
+  miniStat: { flex: 1, borderWidth: 2.5, borderColor: C.ink, borderRadius: 18, padding: 14, alignItems: 'center' },
+  miniVal: { fontFamily: F.display, fontSize: 28, color: C.ink },
+  miniLabel: { fontFamily: F.bold, fontSize: 12, color: C.muted },
+  reportGrid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', rowGap: 18 },
+  reportCard: { backgroundColor: C.paper, borderWidth: 3, borderColor: C.ink, borderRadius: 20, overflow: 'hidden' },
+  reportTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 14, paddingVertical: 8, borderBottomWidth: 3, borderBottomColor: C.ink },
+  reportCode: { fontFamily: F.display, fontSize: 15 },
+  reportEnroll: { flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: C.paper, borderWidth: 2, borderColor: C.ink, borderRadius: 999, paddingHorizontal: 9, paddingVertical: 2 },
+  reportEnrollText: { fontFamily: F.bold, fontSize: 12, color: C.ink },
+  progressRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 4 },
+  barTrack: { flex: 1, height: 14, borderRadius: 8, borderWidth: 2.5, borderColor: C.ink, backgroundColor: C.pink, overflow: 'hidden' },
+  progressText: { fontFamily: F.display, fontSize: 14, color: C.ink, width: 46, textAlign: 'right' },
+  reportFoot: { flexDirection: 'row', flexWrap: 'wrap', gap: 14, marginTop: 4 },
+  footItem: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  footText: { fontFamily: F.bold, fontSize: 12, color: C.muted },
+
+  // enrollment
+  stepCard: { backgroundColor: C.paper, borderWidth: 3, borderColor: C.ink, borderRadius: 22, padding: 20, marginBottom: 20 },
+  stepGhost: { flexDirection: 'row', alignItems: 'center', gap: 12, borderWidth: 3, borderStyle: 'dashed', borderColor: C.ink, borderRadius: 22, padding: 18, opacity: 0.8 },
+  ghostText: { flex: 1, fontFamily: F.medium, fontSize: 14, color: C.muted },
+  stepHead: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 16 },
+  stepNum: { width: 34, height: 34, borderRadius: 12, borderWidth: 2.5, borderColor: C.ink, alignItems: 'center', justifyContent: 'center', transform: [{ rotate: '-6deg' }] },
+  stepNumText: { fontFamily: F.display, fontSize: 16 },
+  stepTitle: { fontFamily: F.display, fontSize: 20, color: C.ink },
+  matrixMetrics: { flexDirection: 'row', flexWrap: 'wrap', gap: 12, marginBottom: 18 },
+  matrixPill: { flexGrow: 1, flexBasis: 130, borderWidth: 2.5, borderColor: C.ink, borderRadius: 16, paddingVertical: 12, alignItems: 'center' },
+  matrixVal: { fontFamily: F.display, fontSize: 28, color: C.ink },
+  matrixLabel: { fontFamily: F.bold, fontSize: 12, color: C.muted, marginTop: 2 },
+  subjectTag: { flexDirection: 'row', alignItems: 'center', gap: 8, borderWidth: 2, borderColor: C.ink, borderRadius: 12, paddingHorizontal: 10, paddingVertical: 5, maxWidth: '100%' },
+  subjectTagCode: { fontFamily: F.display, fontSize: 12 },
+  subjectTagName: { fontFamily: F.medium, fontSize: 12, flexShrink: 1 },
+  executeNotice: { fontFamily: F.medium, fontSize: 14, lineHeight: 20, color: C.muted, marginTop: 16, marginBottom: 14 },
+
+  // notices / empty / loading
+  notice: { flexDirection: 'row', alignItems: 'center', gap: 10, borderWidth: 2.5, borderColor: C.ink, borderRadius: 14, padding: 12, marginBottom: 16 },
+  noticeText: { flex: 1, fontFamily: F.medium, fontSize: 14, lineHeight: 20, color: C.ink },
+  emptyBox: { alignItems: 'center', backgroundColor: C.paper, borderWidth: 3, borderColor: C.ink, borderStyle: 'dashed', borderRadius: 22, padding: 28 },
+  emptyIcon: { width: 54, height: 54, borderRadius: 27, backgroundColor: C.pink, borderWidth: 2.5, borderColor: C.ink, alignItems: 'center', justifyContent: 'center', marginBottom: 10 },
+  emptyTitle: { fontFamily: F.display, fontSize: 20, color: C.ink },
+  emptyText: { fontFamily: F.medium, fontSize: 14, lineHeight: 21, color: C.muted, marginTop: 4, textAlign: 'center' },
+  loadingPad: { padding: 30, alignItems: 'center' },
+  loadingText: { fontFamily: F.bold, fontSize: 14, color: C.muted, marginTop: 4 },
+
+  // modals
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(74,26,36,0.55)', justifyContent: 'center', alignItems: 'center', padding: 20 },
+  modalWrap: { width: '100%', maxWidth: 580 },
+  modalShadow: { position: 'absolute', top: 9, left: 9, right: -9, bottom: -9, borderRadius: 26, backgroundColor: C.coral },
+  modalCard: { backgroundColor: C.paper, borderRadius: 26, borderWidth: 3, borderColor: C.ink, padding: 20 },
+  modalHeader: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 16 },
+  modalIcon: { width: 34, height: 34, borderRadius: 11, backgroundColor: C.yellow, borderWidth: 2.5, borderColor: C.ink, alignItems: 'center', justifyContent: 'center', transform: [{ rotate: '-6deg' }] },
+  modalTitle: { flex: 1, fontFamily: F.display, fontSize: 21, color: C.ink },
+  modalClose: { width: 34, height: 34, borderRadius: 17, backgroundColor: C.pink, borderWidth: 2.5, borderColor: C.ink, alignItems: 'center', justifyContent: 'center' },
+  modalFooter: { flexDirection: 'row', justifyContent: 'flex-end', flexWrap: 'wrap', gap: 12, paddingTop: 16, marginTop: 8 },
+  formRow: { flexDirection: 'row', gap: 12 },
+  formField: { marginBottom: 14 },
+  formLabel: { fontFamily: F.bold, fontSize: 13, color: C.ink, marginBottom: 6 },
+  formInput: { backgroundColor: '#FFFFFF', borderWidth: 2.5, borderColor: C.ink, borderRadius: 14, paddingHorizontal: 12, paddingVertical: 10, fontFamily: F.medium, fontSize: 15, color: C.ink, outlineStyle: 'none' as any },
+  formInputFocus: { borderColor: C.blue, backgroundColor: '#F2FBFF' },
+  errorNotice: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: C.pink, borderWidth: 2.5, borderColor: C.ink, borderRadius: 14, padding: 10, marginBottom: 14 },
+  errorNoticeText: { flex: 1, fontFamily: F.bold, fontSize: 13, color: C.ink },
+  whoRow: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 14, backgroundColor: C.cream, borderRadius: 14, borderWidth: 2.5, borderColor: C.ink, padding: 10 },
+  subjectOption: { flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: '#FFFFFF', borderWidth: 2.5, borderColor: C.ink, borderRadius: 16, padding: 10, marginBottom: 10 },
+  subjectOptionOn: { backgroundColor: '#E6F6FD', borderColor: C.blueDeep },
+  subjectOptionCode: { borderWidth: 2, borderColor: C.ink, borderRadius: 10, paddingHorizontal: 8, paddingVertical: 5 },
 });

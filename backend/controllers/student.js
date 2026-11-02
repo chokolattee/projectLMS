@@ -46,7 +46,7 @@ exports.getStudentDashboard = async (req, res) => {
           if (t.status === 'published') publishedCount++;
         }
       }
-      const instructorName = s.faculty ? `${s.faculty.firstName} ${s.faculty.lastName}` : 'Faculty Instructor';
+      const instructorName = s.faculty ? `${s.faculty.firstName} ${s.faculty.lastName}` : '';
 
       // Check student progress for this subject
       const progress = await StudentProgress.findOne({ student: user._id, subject: s._id });
@@ -66,7 +66,7 @@ exports.getStudentDashboard = async (req, res) => {
       };
     }));
 
-    const totalCredits = enrolledSubjects.length * 3;
+    const completedSubjects = enrolledSubjects.filter(subject => subject.progressPercent >= 100).length;
 
     return res.status(200).json({
       success: true,
@@ -85,12 +85,11 @@ exports.getStudentDashboard = async (req, res) => {
         academics: {
           enrolledSubjects,
           totalSubjects: enrolledSubjects.length,
-          gpa: 3.75,
-          totalCredits: totalCredits || 18,
-          completedCredits: 54,
-          academicYear: user.yearLevel || '1st Year',
-          semester: `${user.activeSemester || '1st Semester'}, A.Y. ${user.schoolYear || '2026-2027'}`,
-          standing: 'Good Standing',
+          gpa: null,
+          completedSubjects,
+          academicYear: user.schoolYear || null,
+          semester: user.activeSemester || null,
+          standing: null,
         },
       },
     });

@@ -31,6 +31,8 @@ export interface ProfileUpdatePayload {
   firstName?: string;
   lastName?: string;
   avatar?: string;
+  yearLevel?: string;
+  activeSemester?: string;
 }
 
 export interface AuthState {
@@ -79,12 +81,11 @@ export interface DashboardProfile {
 export interface DashboardAcademics {
   enrolledSubjects: EnrolledSubject[];
   totalSubjects: number;
-  gpa: number;
-  totalCredits: number;
-  completedCredits: number;
-  academicYear: string;
-  semester: string;
-  standing: string;
+  gpa: number | null;
+  completedSubjects: number;
+  academicYear: string | null;
+  semester: string | null;
+  standing: string | null;
 }
 
 export interface DashboardData {

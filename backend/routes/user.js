@@ -56,7 +56,15 @@ router.get('/user/profile', isAuthenticatedUser, async (req, res) => {
 
 router.patch('/user/profile', isAuthenticatedUser, async (req, res) => {
   try {
-    const allowedFields = ['email', 'username', 'firstName', 'lastName', 'avatar'];
+    const allowedFields = [
+      'email',
+      'username',
+      'firstName',
+      'lastName',
+      'avatar',
+      'yearLevel',
+      'activeSemester',
+    ];
     const updates = {};
 
     for (const field of allowedFields) {
