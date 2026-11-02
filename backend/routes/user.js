@@ -72,6 +72,14 @@ router.patch('/user/profile', isAuthenticatedUser, async (req, res) => {
         if (typeof req.body[field] !== 'string') {
           return res.status(400).json({ success: false, message: `${field} must be a string.` });
         }
+        if (field === 'avatar' && req.body[field].startsWith('data:')) {
+          if (!/^data:image\/(?:jpeg|png);base64,[A-Za-z0-9+/=\s]+$/.test(req.body[field])) {
+            return res.status(400).json({ success: false, message: 'Profile photo must be a PNG or JPEG image.' });
+          }
+          if (req.body[field].length > 2.8 * 1024 * 1024) {
+            return res.status(400).json({ success: false, message: 'Profile photo must be smaller than 2 MB.' });
+          }
+        }
         updates[field] = req.body[field].trim();
       }
     }

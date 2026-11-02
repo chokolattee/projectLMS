@@ -9,6 +9,7 @@ import {
   View,
 } from 'react-native';
 import { router } from 'expo-router';
+import * as ImagePicker from 'expo-image-picker';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { useAuth } from '@/context/AuthContext';
@@ -62,6 +63,33 @@ export default function ProfileScreen() {
   const setField = (field: keyof typeof form, value: string) => {
     setForm(previous => ({ ...previous, [field]: value }));
     setNotice(null);
+  };
+
+  const chooseProfilePhoto = async () => {
+    setNotice(null);
+    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!permission.granted) {
+      setNotice({ type: 'error', text: 'Photo library permission is required to choose a profile photo.' });
+      return;
+    }
+
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ['images'],
+      allowsEditing: true,
+      aspect: [1, 1],
+      quality: 0.8,
+      base64: true,
+    });
+
+    if (result.canceled || !result.assets[0]?.base64) return;
+    const asset = result.assets[0];
+    const mimeType = asset.mimeType === 'image/png' ? 'image/png' : 'image/jpeg';
+    const dataUrl = `data:${mimeType};base64,${asset.base64}`;
+    if (dataUrl.length > 2.8 * 1024 * 1024) {
+      setNotice({ type: 'error', text: 'Please choose a profile photo smaller than 2 MB.' });
+      return;
+    }
+    setField('avatar', dataUrl);
   };
 
   const cancelEdit = () => {
@@ -145,6 +173,15 @@ export default function ProfileScreen() {
             <Text style={styles.role}>{roleLabels[role] || role}</Text>
             <Text style={styles.verification}>{user.isVerified ? 'Verified account' : 'Verification pending'}</Text>
           </View>
+          {isEditing && (
+            <Button
+              title="Choose Photo"
+              variant="outline"
+              size="sm"
+              onPress={chooseProfilePhoto}
+              style={styles.photoButton}
+            />
+          )}
         </View>
 
         {notice && (
@@ -160,9 +197,6 @@ export default function ProfileScreen() {
           <Input label="Email" value={form.email} editable={isEditing} keyboardType="email-address" onChangeText={value => setField('email', value)} />
                     {isStudent && (
             <Input label="TUPT-ID" value={form.tuptId} editable={isEditing} autoCapitalize="characters" onChangeText={value => setField('tuptId', value)} />
-          )}
-          {isEditing && (
-            <Input label="Avatar URL (optional)" value={form.avatar} editable onChangeText={value => setField('avatar', value)} autoCapitalize="none" />
           )}
           {isStudent && isEditing && (
             <View style={styles.sectionPicker}>
@@ -231,7 +265,8 @@ const styles = StyleSheet.create({
   title: { color: COLORS.text, fontSize: 28, fontWeight: '800' },
   subtitle: { color: COLORS.textMuted, fontSize: 14, marginTop: 4 },
   card: { width: '100%', maxWidth: 760, alignSelf: 'center', backgroundColor: COLORS.white, borderRadius: 18, padding: 24, shadowColor: '#000', shadowOpacity: 0.06, shadowRadius: 12, elevation: 3 },
-  profileHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 24 },
+  profileHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 24, flexWrap: 'wrap', gap: 12 },
+  photoButton: { marginLeft: 'auto' },
   avatar: { width: 72, height: 72, borderRadius: 36, backgroundColor: COLORS.primary, alignItems: 'center', justifyContent: 'center' },
   avatarText: { color: COLORS.white, fontSize: 24, fontWeight: '800' },
   profileHeading: { marginLeft: 16, flex: 1 },
