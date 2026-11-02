@@ -140,7 +140,7 @@ function SignedInView({ user }: { user: any }) {
 
   const go = (route: string) => router.push(route as any);
 
-  const courses: FolderItem[] = (user.enrolledSubjects ?? []).slice(0, 3).map((subj: any, i: number) => ({
+  const courses: FolderItem[] = (user.enrolledSubjects ?? []).map((subj: any, i: number) => ({
     tab: subj.code,
     title: subj.title,
     tone: COURSE_TONES[i % COURSE_TONES.length],

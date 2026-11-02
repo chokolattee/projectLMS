@@ -36,6 +36,7 @@ interface FormErrors {
   section?: string;
   password?: string;
   confirmPassword?: string;
+  terms?: string;
 }
 
 export default function RegisterScreen() {
@@ -53,6 +54,8 @@ export default function RegisterScreen() {
   const [errors, setErrors] = useState<FormErrors>({});
   const [successMessage, setSuccessMessage] = useState('');
   const [apiError, setApiError] = useState('');
+  const [termsAccepted, setTermsAccepted] = useState(false);
+  const [termsAtBottom, setTermsAtBottom] = useState(false);
 
   const updateField = (field: keyof FormData) => (value: string) => {
     setForm(prev => ({ ...prev, [field]: value }));
@@ -76,6 +79,7 @@ export default function RegisterScreen() {
     else if (form.password.length < 6) newErrors.password = 'Password must be at least 6 characters';
     if (!form.confirmPassword) newErrors.confirmPassword = 'Please confirm your password';
     else if (form.password !== form.confirmPassword) newErrors.confirmPassword = 'Passwords do not match';
+    if (!termsAccepted) newErrors.terms = 'You must accept the Terms and Conditions to create an account';
 
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
@@ -173,6 +177,56 @@ export default function RegisterScreen() {
               <Input label="Password" placeholder="At least 6 characters" value={form.password} onChangeText={updateField('password')} error={errors.password} secureTextEntry showPasswordToggle />
               <Input label="Confirm Password" placeholder="Re-enter your password" value={form.confirmPassword} onChangeText={updateField('confirmPassword')} error={errors.confirmPassword} secureTextEntry showPasswordToggle />
 
+              <View style={styles.termsCard}>
+                <Text style={styles.termsTitle}>Terms and Conditions</Text>
+                <ScrollView
+                  style={styles.termsScroll}
+                  nestedScrollEnabled
+                  onScroll={({ nativeEvent }) => {
+                    const { layoutMeasurement, contentOffset, contentSize } = nativeEvent;
+                    if (layoutMeasurement.height + contentOffset.y >= contentSize.height - 8) {
+                      setTermsAtBottom(true);
+                    }
+                  }}
+                  scrollEventThrottle={16}
+                >
+                  <Text style={styles.termsText}>
+                    By creating an account and using this Learning Management System (LMS), you agree to the following:
+                  </Text>
+                  <Text style={styles.termsItem}>1. Provide accurate and complete personal and academic information.</Text>
+                  <Text style={styles.termsItem}>2. Use your account only for legitimate academic and educational purposes.</Text>
+                  <Text style={styles.termsItem}>3. Keep your password and account credentials confidential. You are responsible for activity under your account.</Text>
+                  <Text style={styles.termsItem}>4. Do not impersonate another person, share your account, or attempt to access another user’s account.</Text>
+                  <Text style={styles.termsItem}>5. Do not upload, share, or distribute content that is unlawful, abusive, misleading, or infringes another person’s rights.</Text>
+                  <Text style={styles.termsItem}>6. Do not interfere with the LMS, bypass security controls, or use the system to distribute malicious software.</Text>
+                  <Text style={styles.termsItem}>7. Understand that academic content, submissions, grades, and account activity may be recorded and processed to provide LMS services.</Text>
+                  <Text style={styles.termsItem}>8. Report suspected unauthorized access, security issues, or inaccurate account information to the school or system administrator.</Text>
+                  <Text style={styles.termsItem}>9. The school or system administrator may suspend or remove accounts that violate these terms or applicable school policies.</Text>
+                  <Text style={styles.termsItem}>10. These terms may be updated when necessary. Continued use of the LMS after an update means you accept the revised terms.</Text>
+                  {termsAtBottom ? (
+                    <>
+                      <Pressable
+                        accessibilityRole="checkbox"
+                        accessibilityState={{ checked: termsAccepted }}
+                        onPress={() => {
+                          setTermsAccepted(prev => !prev);
+                          if (errors.terms) setErrors(prev => ({ ...prev, terms: undefined }));
+                        }}
+                        style={styles.termsCheckboxRow}
+                      >
+                        <View style={[styles.checkbox, termsAccepted && styles.checkboxChecked]}>
+                          {termsAccepted ? <Text style={styles.checkboxIcon}>✓</Text> : null}
+                        </View>
+                        <Text style={styles.termsAgreement}>I have read and agree to the Terms and Conditions.</Text>
+                      </Pressable>
+                      {errors.terms ? <Text style={styles.termsError}>{errors.terms}</Text> : null}
+                    </>
+                  ) : (
+                    <Text style={styles.termsScrollHint}>Continue scrolling to accept the Terms and Conditions.</Text>
+                  )}
+                </ScrollView>
+              </View>
+
               <Button title="Create Account" onPress={handleRegister} loading={isLoading} size="lg" style={styles.submitButton} />
             </View>
 
@@ -257,6 +311,35 @@ const styles = StyleSheet.create({
   sectionChipText: { fontSize: 12, fontWeight: '700', color: COLORS.textSecondary },
   sectionChipTextActive: { color: COLORS.white },
   sectionError: { fontSize: 12, color: COLORS.error, marginBottom: 8 },
+  termsCard: {
+    backgroundColor: COLORS.background,
+    borderRadius: 12,
+    padding: 14,
+    marginTop: 8,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+  },
+  termsTitle: { fontSize: 14, fontWeight: '700', color: COLORS.text, marginBottom: 6 },
+  termsScroll: { maxHeight: 190, marginBottom: 12 },
+  termsScrollHint: { fontSize: 12, color: COLORS.textSecondary, fontStyle: 'italic' },
+  termsText: { fontSize: 12, color: COLORS.textSecondary, lineHeight: 18, marginBottom: 8 },
+  termsItem: { fontSize: 12, color: COLORS.textSecondary, lineHeight: 18, marginBottom: 7 },
+  termsCheckboxRow: { flexDirection: 'row', alignItems: 'flex-start' },
+  checkbox: {
+    width: 22,
+    height: 22,
+    borderRadius: 5,
+    borderWidth: 1.5,
+    borderColor: COLORS.border,
+    backgroundColor: COLORS.white,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 10,
+  },
+  checkboxChecked: { backgroundColor: COLORS.primary, borderColor: COLORS.primary },
+  checkboxIcon: { color: COLORS.white, fontSize: 15, fontWeight: '800', lineHeight: 18 },
+  termsAgreement: { flex: 1, fontSize: 13, color: COLORS.text, lineHeight: 19 },
+  termsError: { fontSize: 12, color: COLORS.error, marginTop: 8 },
   submitButton: { marginTop: 8, width: '100%' },
   footer: { flexDirection: 'row', alignItems: 'center' },
   footerText: { fontSize: 14, color: COLORS.textSecondary },

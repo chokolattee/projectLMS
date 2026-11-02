@@ -197,21 +197,27 @@ export function CourseNavigator({
                 <Text style={styles.pickerEmptyText}>No subjects available.</Text>
               </View>
             ) : (
-              subjects.map(s => (
-                <Pressable
-                  key={s._id}
-                  style={[styles.pickerItem, s._id === activeSubject?._id && styles.pickerItemActive]}
-                  onPress={() => {
-                    onSelectSubject(s);
-                    setShowSubjectPicker(false);
-                  }}
-                >
-                  <Text style={[styles.pickerCode, s._id === activeSubject?._id && styles.pickerCodeActive]}>
-                    {s.code}
-                  </Text>
-                  <Text style={styles.pickerName} numberOfLines={1}>{s.name}</Text>
-                </Pressable>
-              ))
+              <ScrollView
+                style={styles.pickerScroll}
+                nestedScrollEnabled
+                showsVerticalScrollIndicator
+              >
+                {subjects.map(s => (
+                  <Pressable
+                    key={s._id}
+                    style={[styles.pickerItem, s._id === activeSubject?._id && styles.pickerItemActive]}
+                    onPress={() => {
+                      onSelectSubject(s);
+                      setShowSubjectPicker(false);
+                    }}
+                  >
+                    <Text style={[styles.pickerCode, s._id === activeSubject?._id && styles.pickerCodeActive]}>
+                      {s.code}
+                    </Text>
+                    <Text style={styles.pickerName} numberOfLines={1}>{s.name}</Text>
+                  </Pressable>
+                ))}
+              </ScrollView>
             )}
           </View>
         )}
@@ -573,6 +579,9 @@ const styles = StyleSheet.create({
     marginTop: 6,
     borderWidth: 1,
     borderColor: COLORS.border,
+  },
+  pickerScroll: {
+    maxHeight: 280,
   },
   pickerEmpty: {
     padding: 12,
