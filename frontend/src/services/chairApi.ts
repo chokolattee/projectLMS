@@ -10,6 +10,8 @@ export interface ChairAccount {
   yearLevel?: string;
   activeSemester?: string;
   schoolYear?: string;
+  section?: string;
+  tuptId?: string;
   isVerified?: boolean;
   enrolledSubjects?: { id?: string; code: string; title: string; instructor?: string; schedule?: string }[];
   createdAt: string;

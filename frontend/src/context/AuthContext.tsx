@@ -101,21 +101,38 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const data: ApiResponse = await response.json();
 
       if (data.success && data.token && data.user) {
+        // Load the full profile so section, TUPT-ID, etc. are there right after login
+        let fullUser = data.user as User;
+        try {
+          const meRes = await fetch(`${API_BASE}/auth/me`, {
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${data.token}`,
+            },
+          });
+          const me = await meRes.json();
+          if (meRes.ok && me.success && me.data) {
+            fullUser = { ...data.user, ...me.data } as User;
+          }
+        } catch {
+          // If this fails, fall back to the basic login user
+        }
+
         setState({
-          user: data.user,
+          user: fullUser,
           token: data.token,
           isLoading: false,
           isAuthenticated: true,
         });
         if (typeof window !== 'undefined') {
           const authData = JSON.stringify({
-            user: data.user,
+            user: fullUser,
             token: data.token,
           });
           window.localStorage.setItem('projectLms.auth', authData);
           window.sessionStorage.setItem('projectLms.auth', authData);
         }
-        return { success: true, message: 'Login successful', user: data.user };
+        return { success: true, message: 'Login successful', user: fullUser };
       } else {
         setState(prev => ({ ...prev, isLoading: false }));
         return { success: false, message: data.message || 'Login failed' };

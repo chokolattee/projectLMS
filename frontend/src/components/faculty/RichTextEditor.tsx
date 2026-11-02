@@ -1,7 +1,6 @@
-import React, { useEffect, useRef, useState } from 'react';
-import { Animated, Platform, Pressable, Text, View, StyleSheet } from 'react-native';
-import { C, F, Field, IconName } from '@/components/faculty/brand';
-import { Ionicons } from '@expo/vector-icons';
+import React, { useEffect, useRef } from 'react';
+import { Platform, Pressable, Text, TextInput, View, StyleSheet } from 'react-native';
+import { COLORS } from '@/constants/colors';
 
 interface RichTextEditorProps {
   value: string;
@@ -10,91 +9,15 @@ interface RichTextEditorProps {
   minHeight?: number;
 }
 
-/** Toolbar key. Keeps the text selection when clicked and shows when its format is on. */
-function ToolBtn({
-  label,
-  icon,
-  onPress,
-  active,
-  title,
-  bold,
-  italic,
-}: {
-  label?: string;
-  icon?: IconName;
-  onPress: () => void;
-  active?: boolean;
-  title: string;
-  bold?: boolean;
-  italic?: boolean;
-}) {
-  const p = useRef(new Animated.Value(0)).current;
-  const to = (v: number) => Animated.spring(p, { toValue: v, friction: 6, tension: 240, useNativeDriver: true }).start();
-  return (
-    <Pressable
-      accessibilityRole="button"
-      accessibilityLabel={title}
-      onPress={onPress}
-      onPressIn={() => to(1)}
-      onPressOut={() => to(0)}
-      {...({ onMouseDown: (e: any) => e.preventDefault() } as any)}
-    >
-      <Animated.View
-        style={[
-          st.tool,
-          active && st.toolActive,
-          { transform: [{ scale: p.interpolate({ inputRange: [0, 1], outputRange: [1, 0.88] }) }, { rotate: p.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '-4deg'] }) }] },
-        ]}
-      >
-        {icon ? (
-          <Ionicons name={icon} size={16} color={active ? '#FFFFFF' : C.ink} />
-        ) : (
-          <Text
-            style={[
-              st.toolText,
-              active && { color: '#FFFFFF' },
-              bold && { fontFamily: F.display, fontSize: 15 },
-              italic && { fontStyle: 'italic', fontFamily: F.bold, fontSize: 15 },
-            ]}
-          >
-            {label}
-          </Text>
-        )}
-      </Animated.View>
-    </Pressable>
-  );
-}
-
-const selectCss: React.CSSProperties = {
-  height: 34,
-  borderRadius: 10,
-  border: `2.5px solid ${C.ink}`,
-  backgroundColor: C.paper,
-  color: C.ink,
-  fontFamily: 'Outfit_700Bold, Arial, sans-serif',
-  fontSize: 12,
-  paddingLeft: 8,
-  paddingRight: 8,
-  cursor: 'pointer',
-  outline: 'none',
-};
-
-const colorCss: React.CSSProperties = {
-  width: 38,
-  height: 34,
-  padding: 0,
-  borderRadius: 10,
-  border: `2.5px solid ${C.ink}`,
-  backgroundColor: C.paper,
-  cursor: 'pointer',
-};
+const commands = [
+  { label: 'B', command: 'bold', title: 'Bold selected text' },
+  { label: 'I', command: 'italic', title: 'Italic selected text' },
+];
 
 export function RichTextEditor({ value, onChange, placeholder, minHeight = 220 }: RichTextEditorProps) {
   const editorRef = useRef<HTMLDivElement | null>(null);
   const initialized = useRef(false);
   const selectionRef = useRef<Range | null>(null);
-  const [focused, setFocused] = useState(false);
-  const [fmt, setFmt] = useState({ bold: false, italic: false });
 
   useEffect(() => {
     if (Platform.OS === 'web' && editorRef.current && !initialized.current) {
@@ -105,24 +28,17 @@ export function RichTextEditor({ value, onChange, placeholder, minHeight = 220 }
 
   if (Platform.OS !== 'web') {
     return (
-      <Field
+      <TextInput
+        style={[styles.nativeEditor, { minHeight }]}
         multiline
         value={value}
         onChangeText={onChange}
         placeholder={placeholder}
+        placeholderTextColor={COLORS.textMuted}
         textAlignVertical="top"
-        style={{ minHeight, lineHeight: 21, borderRadius: 16, padding: 14 }}
       />
     );
   }
-
-  const readFormats = () => {
-    try {
-      setFmt({ bold: document.queryCommandState('bold'), italic: document.queryCommandState('italic') });
-    } catch {
-      /* some browsers throw when nothing is selected */
-    }
-  };
 
   const runCommand = (command: string, commandValue?: string) => {
     editorRef.current?.focus();
@@ -133,44 +49,32 @@ export function RichTextEditor({ value, onChange, placeholder, minHeight = 220 }
     }
     document.execCommand(command, false, commandValue);
     onChange(editorRef.current?.innerHTML || '');
-    readFormats();
   };
 
   const saveSelection = () => {
     const selection = window.getSelection();
     if (!selection || !selection.rangeCount || !editorRef.current?.contains(selection.anchorNode)) return;
     selectionRef.current = selection.getRangeAt(0).cloneRange();
-    readFormats();
-  };
-
-  const editorCss: React.CSSProperties = {
-    border: `2.5px solid ${focused ? C.blue : C.ink}`,
-    borderRadius: 16,
-    padding: 14,
-    color: C.ink,
-    backgroundColor: focused ? '#FFFFFF' : C.paper,
-    outline: 'none',
-    lineHeight: 1.6,
-    fontFamily: 'Arial, sans-serif',
-    fontSize: 14,
-    whiteSpace: 'pre-wrap',
-    overflowY: 'auto',
-    minHeight,
-    boxShadow: focused ? `0 4px 0 ${C.blueDeep}` : `0 0 0 ${C.pinkDeep}`,
-    transform: focused ? 'translateY(-2px)' : 'translateY(0)',
-    transition: 'box-shadow .18s ease, border-color .18s ease, transform .18s ease, background-color .18s ease',
   };
 
   return (
-    <View style={st.wrapper}>
-      <View style={st.toolbar}>
-        <ToolBtn label="B" bold title="Bold selected text" active={fmt.bold} onPress={() => runCommand('bold')} />
-        <ToolBtn label="I" italic title="Italic selected text" active={fmt.italic} onPress={() => runCommand('italic')} />
-        <View style={st.sep} />
+    <View style={styles.wrapper}>
+      <View style={styles.toolbar}>
+        {commands.map(item => (
+          <Pressable
+            key={item.label}
+            accessibilityLabel={item.title}
+            accessibilityHint={item.title}
+            style={styles.toolButton}
+            onPress={() => runCommand(item.command)}
+          >
+            <Text style={[styles.toolText, item.command === 'bold' && styles.bold, item.command === 'italic' && styles.italic]}>{item.label}</Text>
+          </Pressable>
+        ))}
         <select
           title="Text style"
           defaultValue="p"
-          style={selectCss}
+          style={styles.selectInput as any}
           onChange={(event: any) => runCommand('formatBlock', event.target.value)}
         >
           <option value="p">Body</option>
@@ -181,7 +85,7 @@ export function RichTextEditor({ value, onChange, placeholder, minHeight = 220 }
         <select
           title="Font family"
           defaultValue="Arial"
-          style={selectCss}
+          style={styles.selectInput as any}
           onChange={(event: any) => runCommand('fontName', event.target.value)}
         >
           <option value="Arial">Arial</option>
@@ -192,7 +96,7 @@ export function RichTextEditor({ value, onChange, placeholder, minHeight = 220 }
         <select
           title="Font size"
           defaultValue="3"
-          style={selectCss}
+          style={styles.selectInput as any}
           onChange={(event: any) => runCommand('fontSize', event.target.value)}
         >
           <option value="2">Small</option>
@@ -200,13 +104,16 @@ export function RichTextEditor({ value, onChange, placeholder, minHeight = 220 }
           <option value="4">Large</option>
           <option value="5">Extra large</option>
         </select>
-        <View style={st.sep} />
-        <ToolBtn icon="list" title="Bulleted list" onPress={() => runCommand('insertUnorderedList')} />
-        <ToolBtn label="1." title="Numbered list" onPress={() => runCommand('insertOrderedList')} />
+        <Pressable style={styles.toolButton} onPress={() => runCommand('insertUnorderedList')}>
+          <Text style={styles.toolText}>• List</Text>
+        </Pressable>
+        <Pressable style={styles.toolButton} onPress={() => runCommand('insertOrderedList')}>
+          <Text style={styles.toolText}>1. List</Text>
+        </Pressable>
         <input
           type="color"
           title="Text color"
-          style={colorCss}
+          style={styles.colorInput as any}
           onChange={(event: any) => runCommand('foreColor', event.target.value)}
         />
       </View>
@@ -218,40 +125,34 @@ export function RichTextEditor({ value, onChange, placeholder, minHeight = 220 }
         onInput={(event: any) => onChange(event.currentTarget.innerHTML)}
         onMouseUp={saveSelection}
         onKeyUp={saveSelection}
-        onFocus={() => setFocused(true)}
-        onBlur={() => setFocused(false)}
-        style={editorCss}
+        style={{ ...webEditorStyle, minHeight }}
       />
     </View>
   );
 }
 
-const st = StyleSheet.create({
+const webEditorStyle: React.CSSProperties = {
+  border: `1px solid ${COLORS.border}`,
+  borderRadius: 6,
+  padding: 12,
+  color: COLORS.text,
+  backgroundColor: '#FCFCFC',
+  outline: 'none',
+  lineHeight: 1.55,
+  fontFamily: 'Arial, sans-serif',
+  fontSize: 14,
+  whiteSpace: 'pre-wrap',
+  overflowY: 'auto',
+};
+
+const styles = StyleSheet.create({
   wrapper: { width: '100%' },
-  toolbar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    flexWrap: 'wrap',
-    gap: 8,
-    backgroundColor: C.cream,
-    padding: 8,
-    borderWidth: 2.5,
-    borderColor: C.ink,
-    borderRadius: 16,
-    marginBottom: 12,
-  },
-  sep: { width: 2.5, height: 22, borderRadius: 2, backgroundColor: C.ink, opacity: 0.25, marginHorizontal: 2 },
-  tool: {
-    minWidth: 34,
-    height: 34,
-    paddingHorizontal: 8,
-    borderRadius: 10,
-    borderWidth: 2.5,
-    borderColor: C.ink,
-    backgroundColor: C.paper,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  toolActive: { backgroundColor: C.blue },
-  toolText: { fontFamily: F.bold, fontSize: 13, color: C.ink },
+  toolbar: { flexDirection: 'row', gap: 5, flexWrap: 'wrap', backgroundColor: '#F8F9FA', padding: 6, borderWidth: 1, borderColor: '#EAECEF', borderRadius: 6, marginBottom: 8 },
+  toolButton: { backgroundColor: COLORS.white, paddingHorizontal: 8, paddingVertical: 5, borderRadius: 4, borderWidth: 1, borderColor: COLORS.border },
+  toolText: { fontSize: 11, fontWeight: '600', color: COLORS.textSecondary },
+  bold: { fontWeight: '900' },
+  italic: { fontStyle: 'italic' },
+  colorInput: { width: 32, height: 28, padding: 0, borderWidth: 0 },
+  selectInput: { height: 28, borderWidth: 1, borderColor: COLORS.border, borderRadius: 4, backgroundColor: COLORS.white, color: COLORS.text, fontSize: 11 },
+  nativeEditor: { backgroundColor: '#FCFCFC', borderRadius: 6, borderWidth: 1, borderColor: COLORS.border, padding: 12, fontSize: 13, color: COLORS.text, lineHeight: 20 },
 });

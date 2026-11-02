@@ -2,6 +2,10 @@ const mongoose = require('mongoose');
 const User = require('../models/user');
 const Subject = require('../models/subject');
 const StudentProgress = require('../models/studentProgress');
+const { yearLevelFromSection, SECTION_YEAR_LEVEL } = require('../utils/sectionYearLevel');
+
+const VALID_SECTIONS = Object.keys(SECTION_YEAR_LEVEL);
+const TUPT_ID_REGEX = /^TUPT-\d{2}-\d{3,5}$/;
 
 // ─── 1. ACCOUNT LIFECYCLE MANAGER ─────────────────────────────────────────────
 
@@ -19,6 +23,7 @@ exports.getAccounts = async (req, res) => {
         { lastName: regex },
         { email: regex },
         { username: regex },
+        { tuptId: regex },
       ];
     }
 
@@ -150,6 +155,7 @@ exports.createAccount = async (req, res) => {
 };
 
 // UPDATE account details
+// UPDATE account details
 exports.updateAccount = async (req, res) => {
   try {
     const { id } = req.params;
@@ -162,6 +168,8 @@ exports.updateAccount = async (req, res) => {
       yearLevel,
       activeSemester,
       schoolYear,
+      section,
+      tuptId,
     } = req.body;
 
     const user = await User.findById(id);
@@ -176,6 +184,34 @@ exports.updateAccount = async (req, res) => {
     if (activeSemester) user.activeSemester = activeSemester;
     if (schoolYear) user.schoolYear = schoolYear;
 
+    // Section (year level follows the section)
+    if (section !== undefined) {
+      if (section && !VALID_SECTIONS.includes(section)) {
+        return res.status(400).json({ success: false, message: 'Please choose a valid section.' });
+      }
+      if (section !== (user.section || '')) {
+        user.section = section;
+        if (section) user.yearLevel = yearLevelFromSection(section);
+      }
+    }
+
+    // TUPT-ID (empty value removes it)
+    if (tuptId !== undefined) {
+      const cleanId = String(tuptId).trim().toUpperCase();
+      if (cleanId && !TUPT_ID_REGEX.test(cleanId)) {
+        return res.status(400).json({ success: false, message: 'Please provide a valid TUPT-ID (e.g. TUPT-22-0123).' });
+      }
+      if (cleanId) {
+        const taken = await User.findOne({ tuptId: cleanId, _id: { $ne: user._id } });
+        if (taken) {
+          return res.status(409).json({ success: false, message: 'TUPT-ID is already taken.' });
+        }
+        user.tuptId = cleanId;
+      } else {
+        user.tuptId = undefined;
+      }
+    }
+
     await user.save();
 
     return res.status(200).json({
@@ -185,6 +221,14 @@ exports.updateAccount = async (req, res) => {
     });
   } catch (error) {
     console.error('updateAccount error:', error);
+    if (error.code === 11000) {
+      const field = Object.keys(error.keyValue || {})[0];
+      const label = field === 'email' ? 'Email' : field === 'tuptId' ? 'TUPT-ID' : 'Username';
+      return res.status(409).json({ success: false, message: `${label} is already taken.` });
+    }
+    if (error.name === 'ValidationError') {
+      return res.status(400).json({ success: false, message: error.message });
+    }
     return res.status(500).json({ success: false, message: 'Failed to update account' });
   }
 };

@@ -1,5 +1,5 @@
 import React from 'react';
-import { Pressable, Text, StyleSheet, ActivityIndicator, PressableProps, View, PressableStateCallbackType } from 'react-native';
+import { Pressable, Text, StyleSheet, ActivityIndicator, PressableProps, View } from 'react-native';
 import { COLORS } from '@/constants/colors';
 
 interface ButtonProps extends PressableProps {
@@ -14,7 +14,7 @@ export function Button({ title, loading, variant = 'primary', size = 'md', disab
   const isDisabled = disabled || loading;
   return (
     <Pressable
-      style={({ pressed }: PressableStateCallbackType) => [
+      style={({ pressed }) => [
         styles.base,
         styles[variant],
         styles[`size_${size}`],

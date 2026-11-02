@@ -1,7 +1,15 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { Animated, Image, Modal, ScrollView, StyleSheet, Text, View } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
-import { Btn, C, ChoiceChip, F, Field, IconBtn, useReduceMotion } from '@/components/faculty/brand';
+import React, { useState, useEffect } from 'react';
+import {
+  View,
+  Text,
+  Modal,
+  StyleSheet,
+  Pressable,
+  ScrollView,
+} from 'react-native';
+import { COLORS } from '@/constants/colors';
+import { Input } from '@/components/ui/Input';
+import { Button } from '@/components/ui/Button';
 import { CreateSubjectPayload, SemesterType, YearLevelType, Subject } from '@/types/faculty';
 
 interface SubjectInitModalProps {
@@ -23,19 +31,18 @@ export function SubjectInitModal({
   initialData,
   mode = 'create',
 }: SubjectInitModalProps) {
-  const reduce = useReduceMotion();
   const [name, setName] = useState('');
   const [code, setCode] = useState('');
   const [academicYear, setAcademicYear] = useState('2026-2027');
   const [semester, setSemester] = useState<SemesterType>('1st Semester');
   const [yearLevel, setYearLevel] = useState<YearLevelType>('1st Year');
 
+  const [showYearDropdown, setShowYearDropdown] = useState(false);
+  const [showSemesterDropdown, setShowSemesterDropdown] = useState(false);
+  const [showYearLevelDropdown, setShowYearLevelDropdown] = useState(false);
+
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-
-  const enter = useRef(new Animated.Value(0)).current;
-  const shake = useRef(new Animated.Value(0)).current;
-  const codePop = useRef(new Animated.Value(1)).current;
 
   useEffect(() => {
     if (initialData && mode === 'edit') {
@@ -54,44 +61,13 @@ export function SubjectInitModal({
     setError('');
   }, [initialData, mode, visible]);
 
-  // Pop the card in each time the modal opens
-  useEffect(() => {
-    if (!visible) return;
-    if (reduce) {
-      enter.setValue(1);
-      return;
-    }
-    enter.setValue(0);
-    Animated.spring(enter, { toValue: 1, friction: 7, tension: 90, useNativeDriver: true }).start();
-  }, [visible, reduce, enter]);
-
-  const fail = (msg: string) => {
-    setError(msg);
-    if (reduce) return;
-    shake.setValue(0);
-    Animated.sequence([
-      Animated.timing(shake, { toValue: 1, duration: 60, useNativeDriver: true }),
-      Animated.timing(shake, { toValue: -1, duration: 90, useNativeDriver: true }),
-      Animated.timing(shake, { toValue: 0.6, duration: 80, useNativeDriver: true }),
-      Animated.timing(shake, { toValue: -0.3, duration: 70, useNativeDriver: true }),
-      Animated.timing(shake, { toValue: 0, duration: 60, useNativeDriver: true }),
-    ]).start();
-  };
-
-  const onCodeChange = (v: string) => {
-    setCode(v);
-    if (reduce) return;
-    codePop.setValue(0.9);
-    Animated.spring(codePop, { toValue: 1, friction: 4, tension: 220, useNativeDriver: true }).start();
-  };
-
   const handleSubmit = async () => {
     if (!name.trim()) {
-      fail('Add a subject title first.');
+      setError('Subject Name is required.');
       return;
     }
     if (!code.trim()) {
-      fail('Add a course code, like CS101 or SEC201.');
+      setError('Course Code is required (e.g., CS101, SEC201).');
       return;
     }
     setError('');
@@ -110,207 +86,319 @@ export function SubjectInitModal({
   };
 
   return (
-    <Modal visible={visible} transparent animationType="none" onRequestClose={onClose}>
-      <Animated.View style={[st.overlay, { opacity: enter }]}>
-        <Animated.View
-          style={[
-            st.wrap,
-            {
-              transform: [
-                { translateY: enter.interpolate({ inputRange: [0, 1], outputRange: [28, 0] }) },
-                { scale: enter.interpolate({ inputRange: [0, 1], outputRange: [0.9, 1] }) },
-                { rotate: enter.interpolate({ inputRange: [0, 1], outputRange: ['-2deg', '0deg'] }) },
-              ],
-            },
-          ]}
-        >
-          <View style={st.cardShadow} />
-          <View style={st.card}>
-            {/* Header */}
-            <View style={st.header}>
-              <Image source={require('@/assets/images/mascot.png')} style={{ width: 58, height: 52 }} resizeMode="contain" />
-              <View style={{ flex: 1 }}>
-                <Text style={st.title}>{mode === 'edit' ? 'Edit subject' : 'Set up a new subject'}</Text>
-                <Text style={st.subtitle}>Name it, give it a code, and say who it is for.</Text>
-              </View>
-              <IconBtn icon="close" label="Close" onPress={onClose} />
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
+      <View style={styles.overlay}>
+        <View style={styles.modalCard}>
+          {/* Header */}
+          <View style={styles.header}>
+            <View>
+              <Text style={styles.title}>
+                {mode === 'edit' ? 'Edit Course Subject' : 'Initialize New Subject'}
+              </Text>
+              <Text style={styles.subtitle}>
+                Configure official course identification, academic calendar, and student cohort level.
+              </Text>
             </View>
-
-            <ScrollView style={st.body} showsVerticalScrollIndicator={false}>
-              {error ? (
-                <Animated.View
-                  style={[
-                    st.errorBox,
-                    { transform: [{ translateX: shake.interpolate({ inputRange: [-1, 1], outputRange: [-9, 9] }) }] },
-                  ]}
-                >
-                  <Ionicons name="alert-circle" size={18} color={C.red} />
-                  <Text style={st.errorText}>{error}</Text>
-                </Animated.View>
-              ) : null}
-
-              {/* Live preview */}
-              <View style={st.preview}>
-                <Animated.View style={[st.previewCode, { transform: [{ scale: codePop }] }]}>
-                  <Ionicons name="library" size={14} color="#FFFFFF" />
-                  <Text style={st.previewCodeText}>{code.trim().toUpperCase() || 'CODE'}</Text>
-                </Animated.View>
-                <Text style={[st.previewName, !name.trim() && { color: C.muted }]} numberOfLines={2}>
-                  {name.trim() || 'Your subject title'}
-                </Text>
-                <View style={st.previewTags}>
-                  {[yearLevel, semester, academicYear].map(tag => (
-                    <View key={tag} style={st.previewTag}>
-                      <Text style={st.previewTagText}>{tag}</Text>
-                    </View>
-                  ))}
-                </View>
-              </View>
-
-              <Text style={st.label}>Subject title</Text>
-              <Field
-                placeholder="e.g., Introduction to Computer Science"
-                value={name}
-                onChangeText={setName}
-                error={!!error && !name.trim()}
-              />
-
-              <Text style={[st.label, { marginTop: 14 }]}>Course code</Text>
-              <Field
-                placeholder="e.g., CS101, SEC201"
-                value={code}
-                onChangeText={onCodeChange}
-                autoCapitalize="characters"
-                error={!!error && !code.trim()}
-              />
-
-              <Text style={[st.label, { marginTop: 18 }]}>Academic year</Text>
-              <View style={st.chipRow}>
-                {ACADEMIC_YEARS.map(yr => (
-                  <ChoiceChip key={yr} label={yr} selected={academicYear === yr} onPress={() => setAcademicYear(yr)} />
-                ))}
-              </View>
-
-              <Text style={[st.label, { marginTop: 16 }]}>Semester</Text>
-              <View style={st.chipRow}>
-                {SEMESTERS.map(sem => (
-                  <ChoiceChip key={sem} label={sem} selected={semester === sem} onPress={() => setSemester(sem)} />
-                ))}
-              </View>
-
-              <Text style={[st.label, { marginTop: 16 }]}>Year level</Text>
-              <View style={st.chipRow}>
-                {YEAR_LEVELS.map(lvl => (
-                  <ChoiceChip key={lvl} label={lvl} selected={yearLevel === lvl} onPress={() => setYearLevel(lvl)} />
-                ))}
-              </View>
-
-              <View style={{ height: 24 }} />
-            </ScrollView>
-
-            {/* Footer */}
-            <View style={st.footer}>
-              <Btn title="Cancel" tone="paper" onPress={onClose} />
-              <Btn
-                title={mode === 'edit' ? 'Save changes' : 'Create subject'}
-                tone="coral"
-                icon={mode === 'edit' ? 'checkmark' : 'rocket'}
-                loading={loading}
-                onPress={handleSubmit}
-              />
-            </View>
+            <Pressable onPress={onClose} style={styles.closeBtn}>
+              <Text style={styles.closeBtnText}>CLOSE</Text>
+            </Pressable>
           </View>
-        </Animated.View>
-      </Animated.View>
+
+          <ScrollView style={styles.body} showsVerticalScrollIndicator={false}>
+            {error ? (
+              <View style={styles.errorBox}>
+                <Text style={styles.errorText}>{error}</Text>
+              </View>
+            ) : null}
+
+            {/* Course Identity */}
+            <View style={styles.sectionHeader}>
+              <Text style={styles.sectionLabel}>Course Identification</Text>
+            </View>
+
+            <Input
+              label="Subject Title"
+              placeholder="e.g., Introduction to Computer Science"
+              value={name}
+              onChangeText={setName}
+            />
+
+            <Input
+              label="Course Code"
+              placeholder="e.g., CS101, SEC201"
+              value={code}
+              onChangeText={setCode}
+              autoCapitalize="characters"
+            />
+
+            {/* Academic Scheduling */}
+            <View style={styles.sectionHeader}>
+              <Text style={styles.sectionLabel}>Academic Placement</Text>
+            </View>
+
+            {/* Academic Year Dropdown */}
+            <Text style={styles.fieldLabel}>Academic Year</Text>
+            <Pressable
+              style={styles.dropdownTrigger}
+              onPress={() => setShowYearDropdown(!showYearDropdown)}
+            >
+              <Text style={styles.dropdownTriggerText}>{academicYear}</Text>
+              <Text style={styles.dropdownCaret}>{showYearDropdown ? '▲' : '▼'}</Text>
+            </Pressable>
+            {showYearDropdown && (
+              <View style={styles.dropdownMenu}>
+                {ACADEMIC_YEARS.map(yr => (
+                  <Pressable
+                    key={yr}
+                    style={[styles.dropdownItem, academicYear === yr && styles.dropdownItemActive]}
+                    onPress={() => {
+                      setAcademicYear(yr);
+                      setShowYearDropdown(false);
+                    }}
+                  >
+                    <Text style={[styles.dropdownItemText, academicYear === yr && styles.dropdownItemTextActive]}>
+                      {yr}
+                    </Text>
+                  </Pressable>
+                ))}
+              </View>
+            )}
+
+            {/* Semester Dropdown (1st, 2nd, 3rd only) */}
+            <Text style={[styles.fieldLabel, { marginTop: 14 }]}>Semester</Text>
+            <Pressable
+              style={styles.dropdownTrigger}
+              onPress={() => setShowSemesterDropdown(!showSemesterDropdown)}
+            >
+              <Text style={styles.dropdownTriggerText}>{semester}</Text>
+              <Text style={styles.dropdownCaret}>{showSemesterDropdown ? '▲' : '▼'}</Text>
+            </Pressable>
+            {showSemesterDropdown && (
+              <View style={styles.dropdownMenu}>
+                {SEMESTERS.map(sem => (
+                  <Pressable
+                    key={sem}
+                    style={[styles.dropdownItem, semester === sem && styles.dropdownItemActive]}
+                    onPress={() => {
+                      setSemester(sem);
+                      setShowSemesterDropdown(false);
+                    }}
+                  >
+                    <Text style={[styles.dropdownItemText, semester === sem && styles.dropdownItemTextActive]}>
+                      {sem}
+                    </Text>
+                  </Pressable>
+                ))}
+              </View>
+            )}
+
+            {/* Year Level Dropdown */}
+            <Text style={[styles.fieldLabel, { marginTop: 14 }]}>Year Level</Text>
+            <Pressable
+              style={styles.dropdownTrigger}
+              onPress={() => setShowYearLevelDropdown(!showYearLevelDropdown)}
+            >
+              <Text style={styles.dropdownTriggerText}>{yearLevel}</Text>
+              <Text style={styles.dropdownCaret}>{showYearLevelDropdown ? '▲' : '▼'}</Text>
+            </Pressable>
+            {showYearLevelDropdown && (
+              <View style={styles.dropdownMenu}>
+                {YEAR_LEVELS.map(lvl => (
+                  <Pressable
+                    key={lvl}
+                    style={[styles.dropdownItem, yearLevel === lvl && styles.dropdownItemActive]}
+                    onPress={() => {
+                      setYearLevel(lvl);
+                      setShowYearLevelDropdown(false);
+                    }}
+                  >
+                    <Text style={[styles.dropdownItemText, yearLevel === lvl && styles.dropdownItemTextActive]}>
+                      {lvl}
+                    </Text>
+                  </Pressable>
+                ))}
+              </View>
+            )}
+
+            <View style={{ height: 24 }} />
+          </ScrollView>
+
+          {/* Footer Actions */}
+          <View style={styles.footer}>
+            <Button
+              title="Cancel"
+              variant="secondary"
+              onPress={onClose}
+              style={styles.cancelBtn}
+            />
+            <Button
+              title={mode === 'edit' ? 'Update Subject' : 'Create Subject'}
+              variant="primary"
+              loading={loading}
+              onPress={handleSubmit}
+              style={styles.submitBtn}
+            />
+          </View>
+        </View>
+      </View>
     </Modal>
   );
 }
 
-const st = StyleSheet.create({
+const styles = StyleSheet.create({
   overlay: {
     flex: 1,
-    backgroundColor: 'rgba(74, 26, 36, 0.6)',
+    backgroundColor: 'rgba(0, 0, 0, 0.55)',
     justifyContent: 'center',
     alignItems: 'center',
     padding: 16,
   },
-  wrap: { width: '100%', maxWidth: 580, maxHeight: '92%' },
-  cardShadow: { position: 'absolute', top: 8, left: 8, right: -8, bottom: -8, borderRadius: 28, backgroundColor: C.coral },
-  card: {
-    flexShrink: 1,
-    backgroundColor: C.paper,
-    borderRadius: 28,
-    borderWidth: 3,
-    borderColor: C.ink,
+  modalCard: {
+    backgroundColor: COLORS.white,
+    borderRadius: 8,
+    width: '100%',
+    maxWidth: 580,
+    maxHeight: '90%',
+    borderWidth: 1,
+    borderColor: COLORS.border,
     overflow: 'hidden',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.15,
+    shadowRadius: 16,
+    elevation: 8,
   },
   header: {
     flexDirection: 'row',
+    justifyContent: 'space-between',
     alignItems: 'center',
-    gap: 12,
-    paddingHorizontal: 18,
-    paddingVertical: 14,
-    backgroundColor: C.yellow,
-    borderBottomWidth: 3,
-    borderBottomColor: C.ink,
+    paddingHorizontal: 20,
+    paddingVertical: 18,
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.border,
+    backgroundColor: '#FAFAFA',
   },
-  title: { fontFamily: F.display, fontSize: 20, color: C.ink },
-  subtitle: { fontFamily: F.medium, fontSize: 12.5, color: C.ink, opacity: 0.75, marginTop: 2 },
-  body: { padding: 18, flexShrink: 1 },
-
-  errorBox: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    backgroundColor: '#FFE3DE',
-    borderWidth: 2.5,
-    borderColor: C.red,
-    borderRadius: 14,
-    padding: 10,
-    marginBottom: 14,
+  title: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: COLORS.text,
+    letterSpacing: -0.2,
   },
-  errorText: { flex: 1, fontFamily: F.bold, fontSize: 13, color: C.red },
-
-  preview: {
-    backgroundColor: C.cream,
-    borderWidth: 2.5,
-    borderColor: C.ink,
-    borderStyle: 'dashed',
-    borderRadius: 18,
-    padding: 14,
-    marginBottom: 18,
-    gap: 8,
-    transform: [{ rotate: '-0.6deg' }],
+  subtitle: {
+    fontSize: 12,
+    color: COLORS.textSecondary,
+    marginTop: 2,
   },
-  previewCode: {
-    alignSelf: 'flex-start',
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    backgroundColor: C.blue,
-    borderWidth: 2.5,
-    borderColor: C.ink,
-    borderRadius: 999,
-    paddingHorizontal: 12,
+  closeBtn: {
     paddingVertical: 4,
+    paddingHorizontal: 8,
+    borderRadius: 4,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    backgroundColor: COLORS.white,
   },
-  previewCodeText: { fontFamily: F.bold, fontSize: 13, color: '#FFFFFF' },
-  previewName: { fontFamily: F.display, fontSize: 20, lineHeight: 24, color: C.ink },
-  previewTags: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
-  previewTag: { backgroundColor: C.pink, borderWidth: 2, borderColor: C.ink, borderRadius: 999, paddingHorizontal: 9, paddingVertical: 2 },
-  previewTagText: { fontFamily: F.bold, fontSize: 11.5, color: C.ink },
-
-  label: { fontFamily: F.bold, fontSize: 13, color: C.ink, marginBottom: 6 },
-  chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-
+  closeBtnText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: COLORS.textSecondary,
+    letterSpacing: 0.5,
+  },
+  body: {
+    padding: 20,
+  },
+  errorBox: {
+    backgroundColor: COLORS.errorLight,
+    padding: 12,
+    borderRadius: 6,
+    borderLeftWidth: 3,
+    borderLeftColor: COLORS.error,
+    marginBottom: 16,
+  },
+  errorText: {
+    color: COLORS.primaryDark,
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  sectionHeader: {
+    marginTop: 8,
+    marginBottom: 12,
+    paddingBottom: 4,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F0F0F0',
+  },
+  sectionLabel: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: COLORS.primary,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  fieldLabel: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: COLORS.textSecondary,
+    marginBottom: 6,
+  },
+  dropdownTrigger: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    backgroundColor: COLORS.inputBg,
+    borderWidth: 1.5,
+    borderColor: COLORS.border,
+    borderRadius: 8,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+  },
+  dropdownTriggerText: {
+    fontSize: 13,
+    color: COLORS.text,
+    fontWeight: '600',
+  },
+  dropdownCaret: {
+    fontSize: 10,
+    color: COLORS.textMuted,
+  },
+  dropdownMenu: {
+    backgroundColor: COLORS.white,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    marginTop: 4,
+    overflow: 'hidden',
+  },
+  dropdownItem: {
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F8F9FA',
+  },
+  dropdownItemActive: {
+    backgroundColor: '#FDEDEC',
+  },
+  dropdownItemText: {
+    fontSize: 12,
+    color: COLORS.text,
+    fontWeight: '500',
+  },
+  dropdownItemTextActive: {
+    color: COLORS.primary,
+    fontWeight: '700',
+  },
   footer: {
     flexDirection: 'row',
     justifyContent: 'flex-end',
-    gap: 12,
-    paddingHorizontal: 18,
+    paddingHorizontal: 20,
     paddingVertical: 14,
-    backgroundColor: C.cream,
-    borderTopWidth: 3,
-    borderTopColor: C.ink,
+    borderTopWidth: 1,
+    borderTopColor: COLORS.border,
+    backgroundColor: '#FAFAFA',
+    gap: 10,
+  },
+  cancelBtn: {
+    paddingHorizontal: 16,
+  },
+  submitBtn: {
+    paddingHorizontal: 20,
   },
 });

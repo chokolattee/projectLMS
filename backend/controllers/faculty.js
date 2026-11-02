@@ -200,6 +200,103 @@ exports.getSubjectProgressReport = async (req, res) => {
   }
 };
 
+// GET enrolled students for a subject
+exports.getSubjectStudents = async (req, res) => {
+  try {
+    const facultyId = req.user._id || req.user.id;
+    const subject = await Subject.findOne({
+      _id: req.params.subjectId,
+      faculty: { $in: [facultyId, String(facultyId)] },
+    });
+    if (!subject) return res.status(404).json({ success: false, message: 'Subject not found.' });
+
+    const students = await User.find({
+      role: 'student',
+      $or: [
+        { _id: { $in: subject.enrolledStudents || [] } },
+        { 'enrolledSubjects.code': subject.code },
+        {
+          yearLevel: subject.yearLevel,
+          activeSemester: subject.semester,
+          schoolYear: subject.academicYear,
+        },
+      ],
+    })
+      .select('firstName lastName email tuptId section')
+      .sort({ lastName: 1, firstName: 1 })
+      .collation({ locale: 'en', strength: 2 })
+      .lean();
+
+    // Quiz scores
+    const progressRows = await StudentProgress.find({
+      subject: subject._id,
+      student: { $in: students.map(s => s._id) },
+    }).lean();
+    const progressByStudent = new Map(progressRows.map(row => [String(row.student), row]));
+
+    const quizTopics = [];
+    for (const mod of subject.modules || []) {
+      for (const topic of mod.topics || []) {
+        if (topic.status !== 'published' || !topic.quiz || !topic.quiz.questions?.length) continue;
+        quizTopics.push({
+          topicId: topic.id,
+          topicTitle: topic.title,
+          moduleTitle: mod.title,
+          totalQuestions: topic.quiz.questions.length,
+        });
+      }
+    }
+    const quizTopicIds = quizTopics.map(q => q.topicId);
+
+    const data = students.map(s => {
+      const progress = progressByStudent.get(String(s._id));
+      const topicProgress = progress?.topicProgress || [];
+      const states = quizTopicIds.map(id => topicProgress.find(t => t.topicId === id));
+      const bestScores = states.map(t => t?.bestScorePercent || 0);
+      const attemptsTotal = states.reduce((sum, t) => sum + (t?.attemptsCount || 0), 0);
+
+      // Score for each quiz = correctCount of the best attempt
+      const quizScores = quizTopics.map(q => {
+        const state = topicProgress.find(t => t.topicId === q.topicId);
+        const attempts = state?.attempts || [];
+        let best = null;
+        for (const a of attempts) {
+          if (!best || (a.correctCount || 0) > (best.correctCount || 0)) best = a;
+        }
+        return {
+          topicId: q.topicId,
+          topicTitle: q.topicTitle,
+          moduleTitle: q.moduleTitle,
+          totalQuestions: best?.totalQuestions || q.totalQuestions,
+          correctCount: best ? best.correctCount || 0 : null,
+        };
+      });
+
+      return {
+        _id: String(s._id),
+        firstName: s.firstName,
+        lastName: s.lastName,
+        email: s.email,
+        studentNumber: s.studentId || '',
+        tuptId: s.tuptId || '',
+        section: s.section || '',
+        quizScorePercent: quizTopicIds.length
+          ? Math.round(bestScores.reduce((sum, score) => sum + score, 0) / quizTopicIds.length)
+          : 0,
+        passedQuizzes: states.filter(t => t?.quizPassed).length,
+        totalQuizzes: quizTopicIds.length,
+        attemptsTotal,
+        quizScores,
+      };
+    });
+
+    return res.status(200).json({ success: true, count: data.length, data });
+  } catch (error) {
+    console.error('getSubjectStudents error:', error);
+    return res.status(500).json({ success: false, message: 'Failed to retrieve enrolled students.' });
+  }
+};
+
 // CREATE subject
 exports.createSubject = async (req, res) => {
   try {

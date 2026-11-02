@@ -21,6 +21,8 @@ export interface User {
   yearLevel?: string;
   activeSemester?: string;
   schoolYear?: string;
+  section?: string;
+  tuptId?: string;
   isVerified: boolean;
   enrolledSubjects: EnrolledSubject[];
 }
@@ -30,9 +32,9 @@ export interface ProfileUpdatePayload {
   username?: string;
   firstName?: string;
   lastName?: string;
+  section?: string;
+  tuptId?: string;
   avatar?: string;
-  yearLevel?: string;
-  activeSemester?: string;
 }
 
 export interface AuthState {
@@ -53,6 +55,8 @@ export interface RegisterPayload {
   firstName: string;
   lastName: string;
   avatar?: string;
+  section?: string;
+  tuptId?: string;
   password: string;
   confirmPassword: string;
 }
@@ -81,11 +85,12 @@ export interface DashboardProfile {
 export interface DashboardAcademics {
   enrolledSubjects: EnrolledSubject[];
   totalSubjects: number;
-  gpa: number | null;
-  completedSubjects: number;
-  academicYear: string | null;
-  semester: string | null;
-  standing: string | null;
+  gpa: number;
+  totalCredits: number;
+  completedCredits: number;
+  academicYear: string;
+  semester: string;
+  standing: string;
 }
 
 export interface DashboardData {

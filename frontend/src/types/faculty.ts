@@ -78,3 +78,26 @@ export interface UpdateSubjectPayload {
   semester?: SemesterType;
   yearLevel?: YearLevelType;
 }
+
+export interface QuizScore {
+  topicId: string;
+  topicTitle: string;
+  moduleTitle?: string;
+  totalQuestions: number;
+  correctCount: number | null;
+}
+
+export interface EnrolledStudent {
+  _id: string;
+  firstName: string;
+  lastName: string;
+  email: string;
+  studentNumber?: string;
+  section?: string;
+  tuptId?: string;
+  quizScorePercent?: number;
+  passedQuizzes?: number;
+  totalQuizzes?: number;
+  attemptsTotal?: number;
+  quizScores?: QuizScore[];
+}

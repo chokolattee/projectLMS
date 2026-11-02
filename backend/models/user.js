@@ -78,6 +78,21 @@ const userSchema = new mongoose.Schema({
     enum: ['student', 'faculty', 'program chair', 'program_chair', 'admin'],
     default: 'student',
   },
+    section: {
+    type: String,
+    enum: ['', 'BSIT 1A', 'BSIT 1B', 'BSIT 2A', 'BSIT 2B', 'BSIT S3A', 'BSIT NS3A', 'BSIT S4A', 'BSIT NS4A'],
+    default: '',
+  },
+  
+    tuptId: {
+    type: String,
+    uppercase: true,
+    trim: true,
+    unique: true,
+    sparse: true,
+    match: [/^TUPT-\d{2}-\d{3,5}$/, 'Please provide a valid TUPT-ID (e.g. TUPT-22-0123)'],
+  },
+
   resetPasswordToken: String,
   resetPasswordExpire: Date,
 }, { timestamps: true });

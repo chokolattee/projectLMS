@@ -3,15 +3,33 @@ const User = require('../models/user');
 const sendToken = require('../utils/jwtToken');
 const sendEmail = require('../utils/sendEmail');
 const { getVerificationEmailTemplate } = require('../utils/emailTemplates');
+const VALID_SECTIONS = ['BSIT 1A', 'BSIT 1B', 'BSIT 2A', 'BSIT 2B', 'BSIT S3A', 'BSIT NS3A', 'BSIT S4A', 'BSIT NS4A'];
+const TUPT_ID_REGEX = /^TUPT-\d{2}-\d{3,5}$/;
+const { yearLevelFromSection } = require('../utils/sectionYearLevel');
 
+// Register
+// Register
 // Register
 exports.registerUser = async (req, res) => {
   try {
-    const { email, username, firstName, lastName, avatar, password, confirmPassword } = req.body;
+    const { email, username, firstName, lastName, avatar, password, confirmPassword, section } = req.body;
+    const tuptId = String(req.body.tuptId || '').trim().toUpperCase();
 
     // Basic validation
     if (!email || !username || !firstName || !lastName || !password) {
       return res.status(400).json({ success: false, message: 'Please provide all required fields.' });
+    }
+
+    if (!tuptId) {
+      return res.status(400).json({ success: false, message: 'TUPT-ID is required.' });
+    }
+
+    if (!TUPT_ID_REGEX.test(tuptId)) {
+      return res.status(400).json({ success: false, message: 'Please provide a valid TUPT-ID (e.g. TUPT-22-0123).' });
+    }
+
+    if (section && !VALID_SECTIONS.includes(section)) {
+      return res.status(400).json({ success: false, message: 'Please choose a valid section.' });
     }
 
     if (password !== confirmPassword) {
@@ -23,9 +41,16 @@ exports.registerUser = async (req, res) => {
     }
 
     // Check duplicates
-    const existingUser = await User.findOne({ $or: [{ email: email.toLowerCase() }, { username: username.toLowerCase() }] });
+    const existingUser = await User.findOne({
+      $or: [{ email: email.toLowerCase() }, { username: username.toLowerCase() }, { tuptId }],
+    });
     if (existingUser) {
-      const field = existingUser.email === email.toLowerCase() ? 'Email' : 'Username';
+      const field =
+        existingUser.email === email.toLowerCase()
+          ? 'Email'
+          : existingUser.tuptId === tuptId
+          ? 'TUPT-ID'
+          : 'Username';
       return res.status(409).json({ success: false, message: `${field} is already registered.` });
     }
 
@@ -41,6 +66,8 @@ exports.registerUser = async (req, res) => {
       avatar: avatar || '',
       password,
       role: 'student',
+      tuptId,
+      section: section || '',
       isVerified: false,
       verificationToken,
       enrolledSubjects: [],
@@ -68,7 +95,7 @@ exports.registerUser = async (req, res) => {
     console.error('Register error:', error);
     if (error.code === 11000) {
       const field = Object.keys(error.keyValue)[0];
-      return res.status(409).json({ success: false, message: `${field} is already taken.` });
+      return res.status(409).json({ success: false, message: `${field === 'tuptId' ? 'TUPT-ID' : field} is already taken.` });
     }
     return res.status(500).json({ success: false, message: 'Server Error: Registration failed.' });
   }
@@ -98,19 +125,25 @@ exports.verifyEmail = async (req, res) => {
 };
 
 // ─── Login ───────────────────────────────────────────────────────────────────
+// ─── Login ───────────────────────────────────────────────────────────────────
 exports.loginUser = async (req, res) => {
   try {
     const { identifier, password } = req.body;
 
     if (!identifier || !password) {
-      return res.status(400).json({ success: false, message: 'Please provide username/email and password.' });
+      return res.status(400).json({ success: false, message: 'Please provide TUPT-ID, username or email and password.' });
     }
 
-    // Accept username or email
-    const isEmail = identifier.includes('@');
-    const query = isEmail
-      ? { email: identifier.toLowerCase() }
-      : { username: identifier.toLowerCase() };
+    // Accept email, TUPT-ID, or username
+    const value = String(identifier).trim();
+    let query;
+    if (value.includes('@')) {
+      query = { email: value.toLowerCase() };
+    } else if (/^TUPT-/i.test(value)) {
+      query = { tuptId: value.toUpperCase() };
+    } else {
+      query = { username: value.toLowerCase() };
+    }
 
     const user = await User.findOne(query).select('+password');
 
@@ -139,6 +172,7 @@ exports.loginUser = async (req, res) => {
 };
 
 // ─── Get Me (Profile) ─────────────────────────────────────────────────────────
+// ─── Get Me (Profile) ─────────────────────────────────────────────────────────
 exports.getMe = async (req, res) => {
   try {
     const user = await User.findById(req.user.id);
@@ -153,10 +187,12 @@ exports.getMe = async (req, res) => {
         firstName: user.firstName,
         lastName: user.lastName,
         role: user.role || 'student',
-        yearLevel: user.yearLevel || '1st Year',
+        yearLevel: user.yearLevel || yearLevelFromSection(user.section),
         activeSemester: user.activeSemester || '1st Semester',
         schoolYear: user.schoolYear || '2026-2027',
         avatar: user.avatar,
+        section: user.section || '',
+        tuptId: user.tuptId || '',
         isVerified: user.isVerified,
         enrolledSubjects: user.enrolledSubjects,
       },

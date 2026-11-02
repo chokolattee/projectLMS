@@ -63,6 +63,7 @@ export interface StudentSubjectDetails {
     };
   };
   overallProgressPercent: number;
+  streak?: { current: number; target: number; unlocked: boolean };
   modules: StudentModule[];
 }
 

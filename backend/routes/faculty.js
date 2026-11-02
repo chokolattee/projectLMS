@@ -4,6 +4,7 @@ const {
   getFacultySubjects,
   getSubjectById,
   getSubjectProgressReport,
+  getSubjectStudents,
   createSubject,
   updateSubject,
   deleteSubject,
@@ -33,6 +34,7 @@ router.get('/faculty/subjects', getFacultySubjects);
 router.post('/faculty/subjects', createSubject);
 router.get('/faculty/subjects/:subjectId', getSubjectById);
 router.get('/faculty/subjects/:subjectId/progress-report', getSubjectProgressReport);
+router.get('/faculty/subjects/:subjectId/students', getSubjectStudents);
 router.put('/faculty/subjects/:subjectId', updateSubject);
 router.delete('/faculty/subjects/:subjectId', deleteSubject);
 

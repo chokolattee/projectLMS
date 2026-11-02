@@ -1,110 +1,22 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { View, Text, StyleSheet, Pressable, Platform, Image, Animated } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import {
+  View,
+  Text,
+  StyleSheet,
+  Pressable,
+  TextInput,
+  Switch,
+  Platform,
+} from 'react-native';
+import { COLORS } from '@/constants/colors';
 import { WaygroundQuiz, QuizQuestion } from '@/types/faculty';
-import { Bob, Btn, C, CountUp, F, Field, IconBtn, IconName, Pop, Segmented, Toggle } from '@/components/faculty/brand';
+import { Button } from '@/components/ui/Button';
 
 interface WaygroundQuizStudioProps {
   quiz?: WaygroundQuiz;
   token: string | null;
   onSaveQuiz: (quiz: WaygroundQuiz) => Promise<void>;
   onUploadQuizDocument: (file: File) => Promise<{ extractedText: string; fileName: string } | null>;
-}
-
-/** Card for one quiz setting. */
-function Setting({
-  icon,
-  tint,
-  title,
-  right,
-  children,
-}: {
-  icon: IconName;
-  tint: string;
-  title: string;
-  right?: React.ReactNode;
-  children?: React.ReactNode;
-}) {
-  return (
-    <View style={st.setting}>
-      <View style={st.settingHead}>
-        <View style={[st.settingIcon, { backgroundColor: tint }]}>
-          <Ionicons name={icon} size={15} color={C.ink} />
-        </View>
-        <Text style={st.settingTitle}>{title}</Text>
-        {right}
-      </View>
-      {children}
-    </View>
-  );
-}
-
-/** Minus, number, plus. */
-function Stepper({
-  value,
-  unit,
-  error,
-  onMinus,
-  onPlus,
-  onText,
-}: {
-  value: number;
-  unit: string;
-  error: boolean;
-  onMinus: () => void;
-  onPlus: () => void;
-  onText: (v: string) => void;
-}) {
-  return (
-    <View style={st.stepper}>
-      <IconBtn icon="remove" size={30} label={`Decrease ${unit}`} onPress={onMinus} />
-      <Field
-        containerStyle={{ width: 64 }}
-        style={{ textAlign: 'center', fontFamily: F.display, fontSize: 18, paddingVertical: 5 }}
-        keyboardType="numeric"
-        value={String(value)}
-        onChangeText={onText}
-        error={error}
-      />
-      <IconBtn icon="add" size={30} label={`Increase ${unit}`} onPress={onPlus} />
-      <Text style={st.unit}>{unit}</Text>
-    </View>
-  );
-}
-
-/** A/B/C/D marker. Turns into a green check when it is the right answer. */
-function Letter({ letter, on, onPress, small }: { letter: string; on: boolean; onPress?: () => void; small?: boolean }) {
-  const pop = useRef(new Animated.Value(1)).current;
-  const first = useRef(true);
-  useEffect(() => {
-    if (first.current) {
-      first.current = false;
-      return;
-    }
-    if (on) {
-      pop.setValue(0.7);
-      Animated.spring(pop, { toValue: 1, friction: 3, tension: 200, useNativeDriver: true }).start();
-    }
-  }, [on, pop]);
-  const size = small ? 28 : 34;
-  return (
-    <Pressable onPress={onPress} disabled={!onPress} accessibilityRole="radio" accessibilityState={{ selected: on }} accessibilityLabel={`Choice ${letter}`}>
-      <Animated.View
-        style={[
-          st.letter,
-          { width: size, height: size, borderRadius: size / 2 },
-          on && { backgroundColor: C.green },
-          { transform: [{ scale: pop }] },
-        ]}
-      >
-        {on ? (
-          <Ionicons name="checkmark" size={small ? 16 : 20} color="#FFFFFF" />
-        ) : (
-          <Text style={[st.letterText, small && { fontSize: 12 }]}>{letter}</Text>
-        )}
-      </Animated.View>
-    </Pressable>
-  );
 }
 
 export function WaygroundQuizStudio({
@@ -371,125 +283,162 @@ export function WaygroundQuizStudio({
 
   const totalPoints = questions.reduce((sum, q) => sum + (q.points || 1), 0);
 
-  const choices = [
-    { letter: 'A', value: optionA, set: setOptionA, ph: 'Choice A' },
-    { letter: 'B', value: optionB, set: setOptionB, ph: 'Choice B' },
-    { letter: 'C', value: optionC, set: setOptionC, ph: 'Choice C (optional)' },
-    { letter: 'D', value: optionD, set: setOptionD, ph: 'Choice D (optional)' },
-  ];
-
   return (
-    <View style={st.container}>
+    <View style={styles.container}>
       {/* Studio Header */}
-      <View style={st.header}>
-        <View style={st.headerTop}>
-          <View style={st.headerIcon}>
-            <Ionicons name="flash" size={20} color={C.ink} />
-          </View>
-          <View style={{ flex: 1 }}>
-            <Text style={st.headerTitle}>Quiz settings</Text>
-            <Text style={st.headerSub}>Multiple choice only. Set the timer, pass mark and how questions are mixed.</Text>
-          </View>
+      <View style={styles.header}>
+        <View style={styles.headerTitleRow}>
+          <Text style={styles.headerTitle}>Assessment Studio (Multiple Choice Only)</Text>
+          <Text style={styles.headerSubtitle}>
+            Configure assessment timing, passing percentage threshold, question shuffling, and individual test items.
+          </Text>
         </View>
 
-        <View style={st.settings}>
-          <Setting
-            icon="timer"
-            tint={C.blue}
-            title="Timer"
-            right={<View style={{ marginLeft: 'auto' }}><Toggle value={hasTimer} onChange={setHasTimer} onLabel="On" offLabel="Off" /></View>}
-          >
+        {/* Global Controls Grid */}
+        <View style={styles.controlsGrid}>
+          {/* Timer Settings */}
+          <View style={styles.controlCard}>
+            <View style={styles.switchHeader}>
+              <Text style={styles.cardHeading}>ASSESSMENT TIMER</Text>
+              <Switch
+                value={hasTimer}
+                onValueChange={setHasTimer}
+                trackColor={{ false: '#D1D5DB', true: COLORS.primary }}
+              />
+            </View>
+
             {hasTimer ? (
               <>
-                <Stepper
-                  value={durationMinutes}
-                  unit="min"
-                  error={!!durationError}
-                  onMinus={() => handleDurationChange(String(Math.max(10, (durationMinutes || 15) - 1)))}
-                  onPlus={() => handleDurationChange(String(Math.min(20, (durationMinutes || 9) + 1)))}
-                  onText={handleDurationChange}
-                />
-                {durationError ? <Text style={st.errCaption}>{durationError}</Text> : <Text style={st.caption}>Pick 10 to 20 minutes.</Text>}
+                <View style={styles.inputInlineRow}>
+                  <Text style={styles.inputLabel}>Duration Limit:</Text>
+                  <TextInput
+                    style={[styles.smallInput, !!durationError && styles.inputError]}
+                    keyboardType="numeric"
+                    value={String(durationMinutes)}
+                    onChangeText={handleDurationChange}
+                  />
+                  <Text style={styles.inputUnit}>Minutes</Text>
+                </View>
+                {durationError ? (
+                  <Text style={styles.errorCaption}>{durationError}</Text>
+                ) : (
+                  <Text style={styles.captionText}>Range: 10 to 20 minutes</Text>
+                )}
               </>
             ) : (
-              <Text style={st.caption}>No time limit. Students can take as long as they need.</Text>
+              <Text style={styles.captionMuted}>Timer disabled (Untimed submission)</Text>
             )}
-          </Setting>
+          </View>
 
-          <Setting icon="ribbon" tint={C.yellow} title="Pass mark">
-            <Stepper
-              value={passingScorePercent}
-              unit="%"
-              error={!!passingScoreError}
-              onMinus={() => handlePassingScoreChange(String(Math.max(1, (passingScorePercent || 5) - 5)))}
-              onPlus={() => handlePassingScoreChange(String(Math.min(100, (passingScorePercent || 0) + 5)))}
-              onText={handlePassingScoreChange}
-            />
-            {passingScoreError ? <Text style={st.errCaption}>{passingScoreError}</Text> : <Text style={st.caption}>Students need at least this to pass.</Text>}
-          </Setting>
+          {/* Passing Score Settings */}
+          <View style={styles.controlCard}>
+            <Text style={styles.cardHeading}>PASSING SCORE THRESHOLD</Text>
+            <View style={styles.inputInlineRow}>
+              <Text style={styles.inputLabel}>Minimum Score:</Text>
+              <TextInput
+                style={[styles.smallInput, !!passingScoreError && styles.inputError]}
+                keyboardType="numeric"
+                value={String(passingScorePercent)}
+                onChangeText={handlePassingScoreChange}
+              />
+              <Text style={styles.inputUnit}>%</Text>
+            </View>
+            {passingScoreError ? (
+              <Text style={styles.errorCaption}>{passingScoreError}</Text>
+            ) : (
+              <Text style={styles.captionText}>Students must meet this threshold to pass.</Text>
+            )}
+          </View>
 
-          <Setting icon="shuffle" tint={C.pink} title="Mix it up">
-            <View style={st.toggleRow}>
-              <Text style={st.toggleLabel}>Shuffle questions</Text>
-              <Toggle value={shuffleQuestions} onChange={setShuffleQuestions} />
+          {/* Shuffling Options */}
+          <View style={styles.controlCard}>
+            <Text style={styles.cardHeading}>RANDOMIZATION</Text>
+            <View style={styles.toggleRow}>
+              <Text style={styles.toggleLabel}>Shuffle Questions:</Text>
+              <Switch
+                value={shuffleQuestions}
+                onValueChange={setShuffleQuestions}
+                trackColor={{ false: '#D1D5DB', true: COLORS.primary }}
+              />
             </View>
-            <View style={st.toggleRow}>
-              <Text style={st.toggleLabel}>Shuffle choices</Text>
-              <Toggle value={shuffleOptions} onChange={setShuffleOptions} />
+            <View style={styles.toggleRow}>
+              <Text style={styles.toggleLabel}>Shuffle Choices:</Text>
+              <Switch
+                value={shuffleOptions}
+                onValueChange={setShuffleOptions}
+                trackColor={{ false: '#D1D5DB', true: COLORS.primary }}
+              />
             </View>
-          </Setting>
+          </View>
         </View>
       </View>
 
       {/* Main Body */}
-      <View style={st.body}>
+      <View style={styles.body}>
+
         {/* QUESTION INPUT MODE SELECTOR */}
-        <Segmented
-          width={340}
-          value={quizDocMode}
-          onChange={setQuizDocMode}
-          options={[
-            { key: 'manual', label: 'Write questions', icon: 'create' },
-            { key: 'upload', label: 'Import from a file', icon: 'cloud-upload' },
-          ]}
-        />
+        <View style={styles.modeSelector}>
+          <Pressable
+            style={[styles.modeBtn, quizDocMode === 'manual' && styles.modeBtnActive]}
+            onPress={() => setQuizDocMode('manual')}
+          >
+            <Text style={[styles.modeBtnText, quizDocMode === 'manual' && styles.modeBtnTextActive]}>
+              Manual Entry
+            </Text>
+          </Pressable>
+          <Pressable
+            style={[styles.modeBtn, quizDocMode === 'upload' && styles.modeBtnActive]}
+            onPress={() => setQuizDocMode('upload')}
+          >
+            <Text style={[styles.modeBtnText, quizDocMode === 'upload' && styles.modeBtnTextActive]}>
+              Upload Document & Extract
+            </Text>
+          </Pressable>
+        </View>
 
         {/* DOCUMENT UPLOAD MODE */}
         {quizDocMode === 'upload' && (
-          <Pop key="upload" from={10} style={st.docSection}>
-            <Text style={st.sectionTitle}>Import from a document</Text>
-            <Text style={st.sectionSub}>
-              Upload a PDF, DOCX, PPTX or TXT file. We pull out the text so you can review it and turn it into questions.
-            </Text>
+          <View style={styles.docUploadSection}>
+            <View style={styles.docUploadHeader}>
+              <Text style={styles.docUploadTitle}>Document Upload — Quiz Text Extraction</Text>
+              <Text style={styles.docUploadSub}>
+                Upload a PDF, DOCX, PPTX, or TXT file. The system will extract the text content for you to review
+                and manually create quiz questions from.
+              </Text>
+            </View>
 
             {docUploadError ? (
-              <View style={st.errorBanner}>
-                <Ionicons name="alert-circle" size={18} color={C.red} />
-                <Text style={st.errorText}>{docUploadError}</Text>
+              <View style={styles.docErrorBanner}>
+                <Text style={styles.docErrorText}>{docUploadError}</Text>
               </View>
             ) : null}
 
             {Platform.OS === 'web' ? (
               <View
-                style={[st.dropzone, isDragOverQuiz && st.dropzoneActive]}
+                style={[styles.docDropzone, isDragOverQuiz && styles.docDropzoneActive]}
                 // @ts-ignore web-only
                 onDragOver={(e: any) => { e.preventDefault(); setIsDragOverQuiz(true); }}
                 onDragLeave={() => setIsDragOverQuiz(false)}
                 onDrop={handleQuizDocDrop}
               >
-                <Bob active={isDragOverQuiz}>
-                  <View style={st.dropIcon}>
-                    <Ionicons name={isExtractingDoc ? 'sync' : 'document-attach'} size={26} color={C.ink} />
-                  </View>
-                </Bob>
-                <Text style={st.dropTitle}>
-                  {isExtractingDoc ? 'Reading your file...' : isDragOverQuiz ? 'Let go to upload' : 'Drop a document here'}
+                <Text style={styles.docDropzoneLabel}>
+                  {isExtractingDoc ? 'EXTRACTING TEXT...' : isDragOverQuiz ? 'RELEASE TO UPLOAD' : 'DRAG & DROP DOCUMENT'}
                 </Text>
-                <Text style={st.sectionSub}>.pdf, .docx, .pptx or .txt, up to 10 MB</Text>
+                <Text style={styles.docDropzoneSubtitle}>Supported: .PDF, .DOCX, .PPTX, .TXT — Max 10 MB</Text>
 
                 {!isExtractingDoc && (
                   <>
-                    <Btn size="sm" tone="blue" icon="folder-open" title="Browse files" onPress={() => quizFileInputRef.current?.click()} style={{ marginTop: 10 }} />
+                    <View style={styles.dropzoneOrRow}>
+                      <View style={styles.dropzoneOrLine} />
+                      <Text style={styles.dropzoneOrText}>or</Text>
+                      <View style={styles.dropzoneOrLine} />
+                    </View>
+                    <Pressable
+                      style={styles.browseBtn}
+                      onPress={() => quizFileInputRef.current?.click()}
+                    >
+                      <Text style={styles.browseBtnText}>Browse File</Text>
+                    </Pressable>
                     {/* @ts-ignore */}
                     <input
                       ref={quizFileInputRef as any}
@@ -502,234 +451,730 @@ export function WaygroundQuizStudio({
                 )}
               </View>
             ) : (
-              <View style={st.dropzone}>
-                <Ionicons name="desktop-outline" size={26} color={C.ink} />
-                <Text style={st.dropTitle}>Import from a browser</Text>
-                <Text style={st.sectionSub}>Open this dashboard in a web browser to upload documents.</Text>
+              <View style={styles.docDropzone}>
+                <Text style={styles.docDropzoneLabel}>FILE UPLOAD</Text>
+                <Text style={styles.docDropzoneSubtitle}>Open in a web browser to use document upload.</Text>
               </View>
             )}
 
-            {docUploadMsg ? <Text style={st.successMsg}>{docUploadMsg}</Text> : null}
+            {docUploadMsg ? (
+              <Text style={styles.docUploadSuccess}>{docUploadMsg}</Text>
+            ) : null}
 
             {extractedRawText ? (
-              <View style={st.extracted}>
-                <Text style={st.extractedTitle}>Extracted text</Text>
-                <Text style={st.sectionSub}>Check it over, then turn it into questions or write them yourself.</Text>
-                <Field
+              <View style={styles.extractedTextCard}>
+                <View style={styles.extractedTextHeader}>
+                  <Text style={styles.extractedTextTitle}>EXTRACTED TEXT CONTENT</Text>
+                  <Text style={styles.extractedTextHint}>
+                    Review the content below. Switch to Manual Entry to create questions from this material.
+                  </Text>
+                </View>
+                <TextInput
+                  style={styles.extractedTextArea}
                   multiline
                   value={extractedRawText}
                   onChangeText={setExtractedRawText}
                   textAlignVertical="top"
                   scrollEnabled
-                  style={{ minHeight: 180, maxHeight: 280, lineHeight: 19, fontSize: 13, borderRadius: 14 }}
-                  containerStyle={{ marginTop: 10 }}
                 />
-                <View style={st.extractedActions}>
-                  <Btn size="sm" tone="coral" icon="color-wand" title="Turn into questions" onPress={handleParseExtractedQuestions} />
-                  <Btn size="sm" tone="paper" icon="create" title="Write them myself" onPress={() => setQuizDocMode('manual')} />
+                <View style={styles.extractedActionsRow}>
+                  <Pressable
+                    style={styles.parseQuestionsBtn}
+                    onPress={handleParseExtractedQuestions}
+                  >
+                    <Text style={styles.parseQuestionsText}>Auto-Transform into Multiple Choice Questions</Text>
+                  </Pressable>
+                  <Pressable
+                    style={styles.switchToManualBtn}
+                    onPress={() => setQuizDocMode('manual')}
+                  >
+                    <Text style={styles.switchToManualText}>Switch to Manual Entry</Text>
+                  </Pressable>
                 </View>
               </View>
             ) : null}
-          </Pop>
+          </View>
         )}
 
         {/* ADD NEW QUESTION FORM */}
-        <View style={[st.form, quizDocMode === 'upload' && !!extractedRawText && { opacity: 0.7 }]}>
-          <Text style={st.sectionTitle}>New question</Text>
+        <View style={[styles.formContainer, quizDocMode === 'upload' && extractedRawText && styles.formContainerCollapsed]}>
+          <Text style={styles.formSectionTitle}>Create Multiple Choice Question</Text>
 
-          <Text style={st.fieldLabel}>Question</Text>
-          <Field placeholder="Type the question..." value={prompt} onChangeText={setPrompt} />
+          <Text style={styles.fieldLabel}>Question Statement</Text>
+          <TextInput
+            style={styles.formInput}
+            placeholder="Type question prompt..."
+            placeholderTextColor={COLORS.textMuted}
+            value={prompt}
+            onChangeText={setPrompt}
+          />
 
-          <Text style={[st.fieldLabel, { marginTop: 14 }]}>Choices. Tap a letter to mark the right answer.</Text>
-          <View style={{ gap: 8 }}>
-            {choices.map((c, i) => (
-              <View key={c.letter} style={st.choiceRow}>
-                <Letter letter={c.letter} on={selectedCorrectIndex === i} onPress={() => setSelectedCorrectIndex(i)} />
-                <Field containerStyle={{ flex: 1 }} placeholder={c.ph} value={c.value} onChangeText={c.set} />
-              </View>
-            ))}
+          <Text style={[styles.fieldLabel, { marginTop: 10 }]}>
+            Answer Choices (Select the radio indicator for the correct choice)
+          </Text>
+
+          {/* Choice A */}
+          <View style={styles.choiceRow}>
+            <Pressable
+              style={[styles.radioCircle, selectedCorrectIndex === 0 && styles.radioCircleActive]}
+              onPress={() => setSelectedCorrectIndex(0)}
+            >
+              {selectedCorrectIndex === 0 && <View style={styles.radioDot} />}
+            </Pressable>
+            <Text style={styles.choiceLetter}>A.</Text>
+            <TextInput
+              style={styles.choiceInput}
+              placeholder="Choice A text"
+              value={optionA}
+              onChangeText={setOptionA}
+            />
           </View>
 
-          <View style={st.metaRow}>
-            <View style={{ flex: 1, minWidth: 200 }}>
-              <Text style={st.fieldLabel}>Why it is right (optional)</Text>
-              <Field placeholder="Explain the correct answer..." value={explanation} onChangeText={setExplanation} />
+          {/* Choice B */}
+          <View style={styles.choiceRow}>
+            <Pressable
+              style={[styles.radioCircle, selectedCorrectIndex === 1 && styles.radioCircleActive]}
+              onPress={() => setSelectedCorrectIndex(1)}
+            >
+              {selectedCorrectIndex === 1 && <View style={styles.radioDot} />}
+            </Pressable>
+            <Text style={styles.choiceLetter}>B.</Text>
+            <TextInput
+              style={styles.choiceInput}
+              placeholder="Choice B text"
+              value={optionB}
+              onChangeText={setOptionB}
+            />
+          </View>
+
+          {/* Choice C */}
+          <View style={styles.choiceRow}>
+            <Pressable
+              style={[styles.radioCircle, selectedCorrectIndex === 2 && styles.radioCircleActive]}
+              onPress={() => setSelectedCorrectIndex(2)}
+            >
+              {selectedCorrectIndex === 2 && <View style={styles.radioDot} />}
+            </Pressable>
+            <Text style={styles.choiceLetter}>C.</Text>
+            <TextInput
+              style={styles.choiceInput}
+              placeholder="Choice C text (optional)"
+              value={optionC}
+              onChangeText={setOptionC}
+            />
+          </View>
+
+          {/* Choice D */}
+          <View style={styles.choiceRow}>
+            <Pressable
+              style={[styles.radioCircle, selectedCorrectIndex === 3 && styles.radioCircleActive]}
+              onPress={() => setSelectedCorrectIndex(3)}
+            >
+              {selectedCorrectIndex === 3 && <View style={styles.radioDot} />}
+            </Pressable>
+            <Text style={styles.choiceLetter}>D.</Text>
+            <TextInput
+              style={styles.choiceInput}
+              placeholder="Choice D text (optional)"
+              value={optionD}
+              onChangeText={setOptionD}
+            />
+          </View>
+
+          <View style={styles.metaInputRow}>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.fieldLabel}>Explanation / Key Rationale (Optional)</Text>
+              <TextInput
+                style={styles.formInput}
+                placeholder="Explain the correct answer..."
+                placeholderTextColor={COLORS.textMuted}
+                value={explanation}
+                onChangeText={setExplanation}
+              />
             </View>
-            <View style={{ width: 84 }}>
-              <Text style={st.fieldLabel}>Points</Text>
-              <Field style={{ textAlign: 'center', fontFamily: F.bold }} keyboardType="numeric" value={points} onChangeText={setPoints} />
+            <View style={{ width: 80 }}>
+              <Text style={styles.fieldLabel}>Points</Text>
+              <TextInput
+                style={[styles.formInput, { textAlign: 'center' }]}
+                keyboardType="numeric"
+                value={points}
+                onChangeText={setPoints}
+              />
             </View>
           </View>
 
-          <Btn title="Add question" tone="blue" size="sm" icon="add-circle" onPress={handleAddQuestion} style={{ marginTop: 16 }} />
+          <Button
+            title="+ Add Question to Assessment"
+            variant="primary"
+            size="sm"
+            onPress={handleAddQuestion}
+            style={{ marginTop: 14, alignSelf: 'flex-start' }}
+          />
         </View>
 
         {/* QUESTIONS LIST */}
-        <View style={{ marginTop: 8 }}>
-          <View style={st.listHead}>
-            <Text style={st.sectionTitle}>Questions ({questions.length})</Text>
-            <View style={st.totalChip}>
-              <Ionicons name="star" size={13} color={C.ink} />
-              <CountUp to={totalPoints} style={st.totalText} />
-              <Text style={st.totalText}>{totalPoints === 1 ? 'point' : 'points'}</Text>
-            </View>
+        <View style={styles.questionsListSection}>
+          <View style={styles.listHeaderRow}>
+            <Text style={styles.listTitle}>Assessment Questions ({questions.length})</Text>
+            <Text style={styles.totalPointsText}>Total Score: {totalPoints} Points</Text>
           </View>
 
           {questions.length === 0 ? (
-            <View style={st.empty}>
-              <Image source={require('@/assets/images/mascot.png')} style={{ width: 90, height: 78 }} resizeMode="contain" />
-              <Text style={st.emptyTitle}>No questions yet</Text>
-              <Text style={st.emptyText}>Write one above or import a document to get started.</Text>
+            <View style={styles.emptyCard}>
+              <Text style={styles.emptyTitle}>No Questions Configured</Text>
+              <Text style={styles.emptySub}>
+                Use the form above to add multiple choice questions to this topic assessment.
+              </Text>
             </View>
           ) : (
-            <View style={{ gap: 12 }}>
-              {questions.map((q, idx) => (
-                <Pop key={q.id} delay={Math.min(idx, 6) * 40} from={14}>
-                  <View style={st.qCard}>
-                    <View style={st.qTop}>
-                      <View style={st.qNum}>
-                        <Text style={st.qNumText}>{idx + 1}</Text>
-                      </View>
-                      <View style={st.qPoints}>
-                        <Text style={st.qPointsText}>
-                          {q.points} {q.points === 1 ? 'pt' : 'pts'}
+            questions.map((q, idx) => (
+              <View key={q.id} style={styles.qCard}>
+                <View style={styles.qCardTop}>
+                  <Text style={styles.qIndexText}>Question {idx + 1}</Text>
+                  <Text style={styles.qPointsText}>{q.points} pt</Text>
+                  <Pressable
+                    style={styles.qDeleteBtn}
+                    onPress={() => handleDeleteQuestion(q.id)}
+                  >
+                    <Text style={styles.qDeleteText}>Delete</Text>
+                  </Pressable>
+                </View>
+
+                <Text style={styles.qPrompt}>{q.prompt}</Text>
+
+                <View style={styles.optionsList}>
+                  {q.options.map((opt, optIdx) => {
+                    const isCorrect = String(q.correctAnswer).toLowerCase() === opt.toLowerCase();
+                    return (
+                      <Pressable
+                        key={optIdx}
+                        style={[styles.optionItem, isCorrect && styles.optionItemCorrect]}
+                        onPress={() => setQuestions(prev => prev.map(item => item.id === q.id ? { ...item, correctAnswer: opt } : item))}
+                      >
+                        <Text style={[styles.optIndicator, isCorrect && styles.optIndicatorCorrect]}>
+                          {isCorrect ? '[CORRECT]' : `(${String.fromCharCode(65 + optIdx)})`}
                         </Text>
-                      </View>
-                      <View style={{ marginLeft: 'auto' }}>
-                        <IconBtn icon="trash" size={28} tone="coral" label="Delete question" onPress={() => handleDeleteQuestion(q.id)} />
-                      </View>
-                    </View>
+                        <Text style={[styles.optText, isCorrect && styles.optTextCorrect]}>
+                          {opt}
+                        </Text>
+                      </Pressable>
+                    );
+                  })}
+                </View>
+                <Text style={styles.correctAnswerHint}>Tap an option to choose the correct answer. The detected answer is highlighted.</Text>
 
-                    <Text style={st.qPrompt}>{q.prompt}</Text>
-
-                    <View style={{ gap: 6 }}>
-                      {q.options.map((opt, optIdx) => {
-                        const isCorrect = String(q.correctAnswer).toLowerCase() === opt.toLowerCase();
-                        return (
-                          <Pressable
-                            key={optIdx}
-                            accessibilityRole="radio"
-                            accessibilityState={{ selected: isCorrect }}
-                            style={[st.option, isCorrect && st.optionCorrect]}
-                            onPress={() => setQuestions(prev => prev.map(item => item.id === q.id ? { ...item, correctAnswer: opt } : item))}
-                          >
-                            <Letter small letter={String.fromCharCode(65 + optIdx)} on={isCorrect} />
-                            <Text style={[st.optText, isCorrect && { fontFamily: F.bold, color: C.greenDeep }]}>{opt}</Text>
-                          </Pressable>
-                        );
-                      })}
-                    </View>
-                    <Text style={st.hint}>Tap a choice to change the right answer.</Text>
-
-                    {q.explanation ? (
-                      <View style={st.note}>
-                        <Ionicons name="bulb" size={16} color={C.ink} />
-                        <Text style={st.noteText}>{q.explanation}</Text>
-                      </View>
-                    ) : null}
+                {q.explanation ? (
+                  <View style={styles.explanationBox}>
+                    <Text style={styles.explanationText}>Rationale: {q.explanation}</Text>
                   </View>
-                </Pop>
-              ))}
-            </View>
+                ) : null}
+              </View>
+            ))
           )}
         </View>
       </View>
 
       {/* Footer */}
-      <View style={st.footer}>
-        <View style={{ flex: 1, gap: 2 }}>
-          {saveSuccess ? (
-            <Pop from={6}>
-              <View style={st.savedNote}>
-                <Ionicons name="checkmark-circle" size={18} color={C.greenDeep} />
-                <Text style={st.savedText}>Quiz saved.</Text>
-              </View>
-            </Pop>
-          ) : null}
-          {durationError ? <Text style={st.errCaption}>{durationError}</Text> : null}
-          {passingScoreError ? <Text style={st.errCaption}>{passingScoreError}</Text> : null}
+      <View style={styles.footer}>
+        <View style={styles.footerNotice}>
+          {saveSuccess && <Text style={styles.saveSuccessText}>Assessment saved successfully.</Text>}
+          {durationError ? <Text style={styles.saveErrText}>{durationError}</Text> : null}
+          {passingScoreError ? <Text style={styles.saveErrText}>{passingScoreError}</Text> : null}
         </View>
-        <Btn
-          title={saving ? 'Saving...' : saveSuccess ? 'Saved' : 'Save quiz'}
-          tone={saveSuccess ? 'green' : 'coral'}
-          icon={saveSuccess ? 'checkmark' : 'save'}
+        <Button
+          title={saving ? "Saving Assessment..." : "Save Assessment"}
+          variant="primary"
           loading={saving}
           disabled={Boolean(durationError || passingScoreError)}
           onPress={handleSaveQuiz}
+          style={styles.saveBtn}
         />
       </View>
     </View>
   );
 }
 
-const st = StyleSheet.create({
-  container: { backgroundColor: C.paper, borderRadius: 24, borderWidth: 3, borderColor: C.ink, overflow: 'hidden' },
+const styles = StyleSheet.create({
+  container: {
+    backgroundColor: COLORS.white,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    overflow: 'hidden',
+    marginBottom: 32,
+  },
+  header: {
+    backgroundColor: '#FAFAFA',
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.border,
+    padding: 16,
+  },
+  headerTitleRow: {
+    marginBottom: 14,
+  },
+  headerTitle: {
+    fontSize: 15,
+    fontWeight: '800',
+    color: COLORS.text,
+  },
+  headerSubtitle: {
+    fontSize: 11,
+    color: COLORS.textSecondary,
+    marginTop: 2,
+  },
+  controlsGrid: {
+    flexDirection: 'row',
+    gap: 12,
+    flexWrap: 'wrap',
+  },
+  controlCard: {
+    flex: 1,
+    minWidth: 220,
+    backgroundColor: COLORS.white,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    borderRadius: 6,
+    padding: 12,
+  },
+  cardHeading: {
+    fontSize: 9,
+    fontWeight: '800',
+    color: COLORS.textMuted,
+    letterSpacing: 0.6,
+    textTransform: 'uppercase',
+    marginBottom: 8,
+  },
+  switchHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  inputInlineRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  inputLabel: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: COLORS.text,
+  },
+  smallInput: {
+    backgroundColor: COLORS.inputBg,
+    borderRadius: 4,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    fontSize: 13,
+    fontWeight: '700',
+    color: COLORS.text,
+    width: 52,
+    textAlign: 'center',
+  },
+  inputError: {
+    borderColor: COLORS.error,
+    backgroundColor: '#FADBD8',
+  },
+  inputUnit: {
+    fontSize: 11,
+    color: COLORS.textSecondary,
+    fontWeight: '600',
+  },
+  captionText: {
+    fontSize: 10,
+    color: COLORS.textMuted,
+    marginTop: 4,
+  },
+  captionMuted: {
+    fontSize: 11,
+    color: COLORS.textMuted,
+    fontStyle: 'italic',
+    marginTop: 4,
+  },
+  errorCaption: {
+    fontSize: 10,
+    color: COLORS.error,
+    fontWeight: '700',
+    marginTop: 4,
+  },
+  toggleRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 4,
+  },
+  toggleLabel: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: COLORS.text,
+  },
+  body: {
+    padding: 16,
+  },
+  formContainer: {
+    backgroundColor: '#FAFAFA',
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    borderRadius: 6,
+    padding: 14,
+    marginBottom: 16,
+  },
+  formSectionTitle: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: COLORS.text,
+    marginBottom: 10,
+  },
+  fieldLabel: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: COLORS.textSecondary,
+    marginBottom: 4,
+  },
+  formInput: {
+    backgroundColor: COLORS.white,
+    borderRadius: 4,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    fontSize: 12,
+    color: COLORS.text,
+  },
+  choiceRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 6,
+    gap: 8,
+  },
+  radioCircle: {
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    borderWidth: 1.5,
+    borderColor: COLORS.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: COLORS.white,
+  },
+  radioCircleActive: {
+    borderColor: COLORS.primary,
+  },
+  radioDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: COLORS.primary,
+  },
+  choiceLetter: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: COLORS.textSecondary,
+    width: 14,
+  },
+  choiceInput: {
+    flex: 1,
+    backgroundColor: COLORS.white,
+    borderRadius: 4,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    fontSize: 12,
+    color: COLORS.text,
+  },
+  metaInputRow: {
+    flexDirection: 'row',
+    gap: 12,
+    marginTop: 8,
+  },
+  questionsListSection: {
+    marginTop: 6,
+  },
+  listHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  listTitle: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: COLORS.text,
+  },
+  totalPointsText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: COLORS.primary,
+  },
+  emptyCard: {
+    backgroundColor: '#FAFAFA',
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    borderRadius: 6,
+    padding: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  emptyTitle: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: COLORS.text,
+  },
+  emptySub: {
+    fontSize: 11,
+    color: COLORS.textMuted,
+    marginTop: 2,
+    textAlign: 'center',
+  },
+  qCard: {
+    backgroundColor: COLORS.white,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    borderRadius: 6,
+    padding: 12,
+    marginBottom: 8,
+  },
+  qCardTop: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 6,
+  },
+  qIndexText: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: COLORS.primary,
+  },
+  qPointsText: {
+    fontSize: 10,
+    fontWeight: '600',
+    color: COLORS.textSecondary,
+    backgroundColor: '#F0F0F0',
+    paddingHorizontal: 5,
+    paddingVertical: 1,
+    borderRadius: 3,
+  },
+  qDeleteBtn: {
+    marginLeft: 'auto',
+  },
+  qDeleteText: {
+    fontSize: 11,
+    color: COLORS.error,
+    fontWeight: '600',
+  },
+  qPrompt: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: COLORS.text,
+    lineHeight: 16,
+    marginBottom: 6,
+  },
+  optionsList: {
+    gap: 4,
+    marginVertical: 4,
+  },
+  optionItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F8F9FA',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 4,
+    gap: 6,
+  },
+  optionItemCorrect: {
+    backgroundColor: '#EAFAF1',
+    borderWidth: 1,
+    borderColor: '#A9DFBF',
+  },
+  optIndicator: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: COLORS.textMuted,
+  },
+  optIndicatorCorrect: {
+    color: '#27AE60',
+  },
+  optText: {
+    fontSize: 11,
+    color: COLORS.text,
+    flex: 1,
+  },
+  optTextCorrect: {
+    color: '#1E8449',
+    fontWeight: '700',
+  },
+  correctAnswerHint: {
+    fontSize: 10,
+    color: COLORS.textMuted,
+    fontStyle: 'italic',
+    marginTop: 5,
+  },
+  explanationBox: {
+    backgroundColor: '#FEF9E7',
+    borderRadius: 4,
+    padding: 6,
+    marginTop: 4,
+  },
+  explanationText: {
+    fontSize: 10,
+    color: '#7D6608',
+  },
+  footer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    backgroundColor: '#FAFAFA',
+    borderTopWidth: 1,
+    borderTopColor: COLORS.border,
+  },
+  footerNotice: { flex: 1 },
+  saveSuccessText: { fontSize: 11, fontWeight: '700', color: '#27AE60' },
+  saveErrText: { fontSize: 11, fontWeight: '700', color: COLORS.error },
+  saveBtn: { paddingHorizontal: 18 },
 
-  header: { backgroundColor: C.pink, borderBottomWidth: 3, borderBottomColor: C.ink, paddingTop: 26, paddingHorizontal: 16, paddingBottom: 16 },
-  headerTop: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 14 },
-  headerIcon: { width: 40, height: 40, borderRadius: 20, borderWidth: 2.5, borderColor: C.ink, backgroundColor: C.yellow, alignItems: 'center', justifyContent: 'center' },
-  headerTitle: { fontFamily: F.display, fontSize: 18, color: C.ink },
-  headerSub: { fontFamily: F.medium, fontSize: 12.5, color: C.ink, opacity: 0.75, marginTop: 1 },
+  // Mode Selector
+  modeSelector: {
+    flexDirection: 'row',
+    gap: 0,
+    marginBottom: 16,
+    backgroundColor: '#F3F4F6',
+    borderRadius: 6,
+    padding: 3,
+    alignSelf: 'flex-start',
+  },
+  modeBtn: {
+    paddingHorizontal: 14,
+    paddingVertical: 7,
+    borderRadius: 5,
+  },
+  modeBtnActive: {
+    backgroundColor: COLORS.white,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.08,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  modeBtnText: { fontSize: 12, fontWeight: '600', color: COLORS.textMuted },
+  modeBtnTextActive: { color: COLORS.text, fontWeight: '700' },
 
-  settings: { flexDirection: 'row', flexWrap: 'wrap', gap: 12 },
-  setting: { flex: 1, minWidth: 220, backgroundColor: C.paper, borderWidth: 2.5, borderColor: C.ink, borderRadius: 18, padding: 12, gap: 10 },
-  settingHead: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  settingIcon: { width: 28, height: 28, borderRadius: 14, borderWidth: 2, borderColor: C.ink, alignItems: 'center', justifyContent: 'center' },
-  settingTitle: { fontFamily: F.bold, fontSize: 14, color: C.ink },
-  stepper: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  unit: { fontFamily: F.bold, fontSize: 13, color: C.muted },
-  caption: { fontFamily: F.medium, fontSize: 12, color: C.muted },
-  errCaption: { fontFamily: F.bold, fontSize: 12, color: C.red },
-  toggleRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  toggleLabel: { fontFamily: F.medium, fontSize: 13, color: C.ink },
-
-  body: { padding: 16, gap: 16 },
-
-  sectionTitle: { fontFamily: F.display, fontSize: 16, color: C.ink },
-  sectionSub: { fontFamily: F.medium, fontSize: 12.5, color: C.muted, lineHeight: 18 },
-  fieldLabel: { fontFamily: F.bold, fontSize: 12.5, color: C.ink, marginBottom: 6 },
-
-  docSection: { backgroundColor: C.cream, borderWidth: 2.5, borderColor: C.ink, borderRadius: 20, padding: 14, gap: 8 },
-  errorBanner: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: '#FFE3DE', borderWidth: 2.5, borderColor: C.red, borderRadius: 14, padding: 10 },
-  errorText: { flex: 1, fontFamily: F.bold, fontSize: 13, color: C.red },
-  dropzone: { alignItems: 'center', justifyContent: 'center', gap: 4, minHeight: 170, padding: 22, borderRadius: 18, borderWidth: 3, borderColor: C.ink, borderStyle: 'dashed', backgroundColor: C.paper },
-  dropzoneActive: { backgroundColor: C.pink, borderColor: C.coralDeep },
-  dropIcon: { width: 52, height: 52, borderRadius: 26, borderWidth: 2.5, borderColor: C.ink, backgroundColor: C.yellow, alignItems: 'center', justifyContent: 'center' },
-  dropTitle: { fontFamily: F.display, fontSize: 16, color: C.ink, marginTop: 6, textAlign: 'center' },
-  successMsg: { fontFamily: F.bold, fontSize: 13, color: C.greenDeep },
-  extracted: { marginTop: 6, backgroundColor: C.paper, borderWidth: 2.5, borderColor: C.ink, borderRadius: 16, padding: 12 },
-  extractedTitle: { fontFamily: F.bold, fontSize: 14, color: C.ink },
-  extractedActions: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginTop: 12 },
-
-  form: { backgroundColor: C.cream, borderWidth: 2.5, borderColor: C.ink, borderRadius: 20, padding: 14 },
-  choiceRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  letter: { alignItems: 'center', justifyContent: 'center', backgroundColor: C.paper, borderWidth: 2.5, borderColor: C.ink },
-  letterText: { fontFamily: F.display, fontSize: 14, color: C.ink },
-  metaRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 12, marginTop: 14 },
-
-  listHead: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
-  totalChip: { flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: C.yellow, borderWidth: 2.5, borderColor: C.ink, borderRadius: 999, paddingHorizontal: 12, paddingVertical: 4 },
-  totalText: { fontFamily: F.bold, fontSize: 13, color: C.ink },
-
-  empty: { alignItems: 'center', backgroundColor: C.cream, borderWidth: 3, borderColor: C.ink, borderStyle: 'dashed', borderRadius: 22, padding: 22 },
-  emptyTitle: { fontFamily: F.display, fontSize: 18, color: C.ink, marginTop: 4 },
-  emptyText: { fontFamily: F.medium, fontSize: 13, color: C.muted, marginTop: 2, textAlign: 'center' },
-
-  qCard: { backgroundColor: C.paper, borderWidth: 3, borderColor: C.ink, borderRadius: 20, padding: 14, gap: 10 },
-  qTop: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  qNum: { width: 30, height: 30, borderRadius: 15, backgroundColor: C.blue, borderWidth: 2.5, borderColor: C.ink, alignItems: 'center', justifyContent: 'center' },
-  qNumText: { fontFamily: F.display, fontSize: 14, color: '#FFFFFF' },
-  qPoints: { backgroundColor: C.cream, borderWidth: 2, borderColor: C.ink, borderRadius: 999, paddingHorizontal: 9, paddingVertical: 2 },
-  qPointsText: { fontFamily: F.bold, fontSize: 11.5, color: C.ink },
-  qPrompt: { fontFamily: F.bold, fontSize: 15, lineHeight: 21, color: C.ink },
-  option: { flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: C.cream, borderWidth: 2.5, borderColor: 'transparent', borderRadius: 14, paddingVertical: 6, paddingHorizontal: 8 },
-  optionCorrect: { backgroundColor: '#D6F5E6', borderColor: C.green },
-  optText: { flex: 1, fontFamily: F.medium, fontSize: 13.5, color: C.ink },
-  hint: { fontFamily: F.medium, fontSize: 11.5, color: C.muted },
-  note: { flexDirection: 'row', alignItems: 'flex-start', gap: 8, backgroundColor: C.yellow, borderWidth: 2, borderColor: C.ink, borderRadius: 12, padding: 9 },
-  noteText: { flex: 1, fontFamily: F.medium, fontSize: 12.5, lineHeight: 18, color: C.ink },
-
-  footer: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 16, paddingVertical: 12, backgroundColor: C.cream, borderTopWidth: 3, borderTopColor: C.ink },
-  savedNote: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  savedText: { fontFamily: F.bold, fontSize: 13, color: C.greenDeep },
+  // Document Upload
+  docUploadSection: {
+    marginBottom: 16,
+    backgroundColor: '#FAFAFA',
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    borderRadius: 8,
+    padding: 16,
+  },
+  docUploadHeader: { marginBottom: 14 },
+  docUploadTitle: { fontSize: 13, fontWeight: '800', color: COLORS.text, marginBottom: 4 },
+  docUploadSub: { fontSize: 11, color: COLORS.textSecondary, lineHeight: 17 },
+  docErrorBanner: {
+    backgroundColor: '#FDEDEC',
+    borderRadius: 6,
+    padding: 10,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: '#FADBD8',
+  },
+  docErrorText: { fontSize: 12, color: COLORS.error, fontWeight: '600' },
+  docDropzone: {
+    backgroundColor: COLORS.white,
+    borderWidth: 2,
+    borderColor: '#DDE2EA',
+    borderStyle: 'dashed',
+    borderRadius: 8,
+    padding: 28,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    minHeight: 160,
+  },
+  docDropzoneActive: { borderColor: COLORS.primary, backgroundColor: '#FEF5F5' },
+  docDropzoneLabel: {
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 2,
+    color: COLORS.primary,
+    marginBottom: 2,
+  },
+  docDropzoneSubtitle: { fontSize: 11, color: COLORS.textMuted, textAlign: 'center' },
+  dropzoneOrRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginVertical: 10 },
+  dropzoneOrLine: { flex: 1, height: 1, backgroundColor: COLORS.border },
+  dropzoneOrText: { fontSize: 11, color: COLORS.textMuted, fontWeight: '600' },
+  browseBtn: {
+    backgroundColor: COLORS.white,
+    borderWidth: 1.5,
+    borderColor: COLORS.primary,
+    borderRadius: 6,
+    paddingHorizontal: 20,
+    paddingVertical: 8,
+  },
+  browseBtnText: { fontSize: 12, fontWeight: '700', color: COLORS.primary },
+  docUploadSuccess: { fontSize: 12, color: '#27AE60', fontWeight: '700', marginTop: 10 },
+  extractedTextCard: {
+    marginTop: 14,
+    backgroundColor: COLORS.white,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    borderRadius: 6,
+    overflow: 'hidden',
+  },
+  extractedTextHeader: {
+    backgroundColor: '#F8F9FA',
+    padding: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.border,
+  },
+  extractedTextTitle: {
+    fontSize: 10,
+    fontWeight: '800',
+    letterSpacing: 0.8,
+    color: COLORS.textMuted,
+    marginBottom: 3,
+  },
+  extractedTextHint: { fontSize: 11, color: COLORS.textSecondary },
+  extractedTextArea: {
+    padding: 12,
+    fontSize: 12,
+    color: COLORS.text,
+    minHeight: 180,
+    maxHeight: 280,
+    lineHeight: 19,
+    fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
+    backgroundColor: COLORS.white,
+  },
+  extractedActionsRow: {
+    borderTopWidth: 1,
+    borderTopColor: COLORS.border,
+    flexDirection: 'row',
+    backgroundColor: '#FAFAFA',
+  },
+  parseQuestionsBtn: {
+    flex: 1,
+    padding: 12,
+    alignItems: 'center',
+    backgroundColor: COLORS.primary,
+  },
+  parseQuestionsText: {
+    fontSize: 12,
+    color: COLORS.white,
+    fontWeight: '700',
+  },
+  switchToManualBtn: {
+    padding: 12,
+    paddingHorizontal: 16,
+    alignItems: 'center',
+    backgroundColor: '#F3F4F6',
+    borderLeftWidth: 1,
+    borderLeftColor: COLORS.border,
+  },
+  switchToManualText: { fontSize: 12, color: COLORS.textSecondary, fontWeight: '700' },
+  formContainerCollapsed: { opacity: 0.7 },
 });

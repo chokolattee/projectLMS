@@ -1,10 +1,18 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { View, Text, StyleSheet, Pressable, Platform, Animated } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import {
+  View,
+  Text,
+  StyleSheet,
+  Pressable,
+  TextInput,
+  Platform,
+  ScrollView,
+} from 'react-native';
+import { COLORS } from '@/constants/colors';
 import { Topic, TopicContent } from '@/types/faculty';
+import { Button } from '@/components/ui/Button';
 import { RichTextEditor } from '@/components/faculty/RichTextEditor';
 import { PresentationViewer } from '@/components/presentation/PresentationViewer';
-import { Bob, Btn, C, F, Field, IconBtn, IconName, Pop, Toggle } from '@/components/faculty/brand';
 
 interface TopicContentStudioProps {
   topic: Topic;
@@ -21,42 +29,6 @@ function formatFileSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
   return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
-}
-
-/** Tab pill that rises when selected. */
-function TabPill({ label, icon, active, onPress }: { label: string; icon: IconName; active: boolean; onPress: () => void }) {
-  const v = useRef(new Animated.Value(active ? 1 : 0)).current;
-  useEffect(() => {
-    Animated.spring(v, { toValue: active ? 1 : 0, friction: 6, tension: 160, useNativeDriver: true }).start();
-  }, [active, v]);
-  return (
-    <Pressable accessibilityRole="tab" accessibilityState={{ selected: active }} onPress={onPress}>
-      <Animated.View
-        style={[
-          st.tab,
-          active && st.tabActive,
-          { transform: [{ translateY: v.interpolate({ inputRange: [0, 1], outputRange: [0, -3] }) }, { rotate: v.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '-1deg'] }) }] },
-        ]}
-      >
-        <Ionicons name={icon} size={15} color={C.ink} />
-        <Text style={[st.tabText, !active && { color: C.muted }]}>{label}</Text>
-      </Animated.View>
-    </Pressable>
-  );
-}
-
-function Banner({ icon, tint, title, sub }: { icon: IconName; tint: string; title: string; sub: string }) {
-  return (
-    <View style={st.banner}>
-      <View style={[st.bannerIcon, { backgroundColor: tint }]}>
-        <Ionicons name={icon} size={18} color={C.ink} />
-      </View>
-      <View style={{ flex: 1 }}>
-        <Text style={st.bannerTitle}>{title}</Text>
-        <Text style={st.bannerSub}>{sub}</Text>
-      </View>
-    </View>
-  );
 }
 
 export function TopicContentStudio({
@@ -289,167 +261,185 @@ export function TopicContentStudio({
     setSummaryBullets(summaryBullets.filter((_, i) => i !== index));
   };
 
-  const TABS: { id: TabType; label: string; icon: IconName }[] = [
-    { id: 'text', label: 'Lesson text', icon: 'create' },
-    { id: 'presentation', label: 'Slides', icon: 'easel' },
-    { id: 'summary', label: 'Summary', icon: 'sparkles' },
+  const TABS: { id: TabType; label: string }[] = [
+    { id: 'text', label: 'Text Content' },
+    { id: 'presentation', label: 'Presentation (AWS S3)' },
+    { id: 'summary', label: 'Summary' },
   ];
 
-  const wordCount = richText.replace(/<[^>]+>/g, ' ').trim().split(/\s+/).filter(Boolean).length;
-  const isPdf = presentationFileName?.toLowerCase().endsWith('.pdf');
-
   return (
-    <View style={st.card}>
+    <View style={styles.cardContainer}>
       {/* Top Header */}
-      <View style={st.header}>
-        <View style={st.titleRow}>
-          <Field
-            containerStyle={{ flex: 1, minWidth: 200 }}
-            style={{ fontFamily: F.bold, fontSize: 17 }}
+      <View style={styles.studioHeader}>
+        <View style={styles.titleEditRow}>
+          <TextInput
+            style={styles.topicTitleInput}
             value={title}
             onChangeText={setTitle}
-            placeholder="Topic title"
+            placeholder="Topic Title..."
+            placeholderTextColor={COLORS.textMuted}
           />
-          <View style={[st.statusBox, status === 'published' && { backgroundColor: '#D6F5E6' }]}>
-            <Ionicons name={status === 'published' ? 'rocket' : 'pencil'} size={15} color={C.ink} />
-            <Toggle value={status === 'published'} onChange={handleToggleStatus} onLabel="Live" offLabel="Draft" />
-          </View>
+          <Pressable
+            style={[styles.statusToggle, status === 'published' ? styles.statusPub : styles.statusDft]}
+            onPress={handleToggleStatus}
+          >
+            <Text style={[styles.statusText, status === 'published' ? styles.statusTextPub : styles.statusTextDft]}>
+              {status === 'published' ? 'PUBLISHED' : 'DRAFT'}
+            </Text>
+          </Pressable>
         </View>
 
-        <View style={st.tabRow}>
+        {/* Tab Bar */}
+        <View style={styles.tabNavRow}>
           {TABS.map(tab => (
-            <TabPill key={tab.id} label={tab.label} icon={tab.icon} active={activeTab === tab.id} onPress={() => setActiveTab(tab.id)} />
+            <Pressable
+              key={tab.id}
+              style={[styles.tabButton, activeTab === tab.id && styles.tabButtonActive]}
+              onPress={() => setActiveTab(tab.id)}
+            >
+              <Text style={[styles.tabLabel, activeTab === tab.id && styles.tabLabelActive]}>
+                {tab.label}
+              </Text>
+            </Pressable>
           ))}
         </View>
       </View>
 
       {/* Main Tab Body */}
-      <View style={st.body}>
+      <View style={styles.studioBody}>
+
         {/* ── TAB 1: TEXT CONTENT ────────────────────────────── */}
         {activeTab === 'text' && (
-          <Pop key="text" from={10}>
-            <Banner icon="create" tint={C.cream} title="Lesson text" sub="Write the explanation, steps and examples students will read." />
-            <RichTextEditor value={richText} onChange={setRichText} placeholder="Start writing the lesson..." />
-            <View style={st.countRow}>
-              <View style={st.countChip}>
-                <Ionicons name="text" size={12} color={C.ink} />
-                <Text style={st.countText}>
-                  {wordCount} {wordCount === 1 ? 'word' : 'words'}
-                </Text>
-              </View>
+          <View style={styles.tabPane}>
+            <View style={styles.paneBanner}>
+              <Text style={styles.paneBannerTitle}>Instructional Text & Lesson Prose</Text>
+              <Text style={styles.paneBannerSub}>
+                Author technical guidelines, syntax explanations, and learning material directly.
+              </Text>
             </View>
-          </Pop>
+
+            <RichTextEditor value={richText} onChange={setRichText} placeholder="Enter lesson text content..." />
+
+            <View style={styles.charCountRow}>
+              <Text style={styles.charCount}>
+                {richText.trim().split(/\s+/).filter(Boolean).length} words
+              </Text>
+            </View>
+          </View>
         )}
 
         {/* ── TAB 2: PRESENTATION (AWS S3) ───────────────────── */}
         {activeTab === 'presentation' && (
-          <Pop key="presentation" from={10}>
-            <Banner icon="easel" tint={C.pink} title="Slides" sub="Upload a .pptx, .ppt or .pdf, up to 50 MB. Files are stored on Amazon S3." />
+          <View style={styles.tabPane}>
+            <View style={styles.paneBanner}>
+              <Text style={styles.paneBannerTitle}>AWS S3 Presentation Storage</Text>
+              <Text style={styles.paneBannerSub}>
+                Upload lecture slides (.PPTX, .PDF). Files are stored securely on Amazon S3 and served via CDN.
+              </Text>
+            </View>
 
             {uploadError ? (
-              <View style={st.errorBanner}>
-                <Ionicons name="alert-circle" size={18} color={C.red} />
-                <Text style={st.errorText}>{uploadError}</Text>
+              <View style={styles.errorBanner}>
+                <Text style={styles.errorBannerText}>{uploadError}</Text>
               </View>
             ) : null}
 
             {presentationS3Key ? (
               <>
-                {/* ─ Attached File Card ─ */}
-                <View style={st.fileCard}>
-                  <View style={[st.fileBadge, { backgroundColor: isPdf ? C.coral : C.blue }]}>
-                    <Ionicons name="document-text" size={18} color="#FFFFFF" />
-                    <Text style={st.fileBadgeText}>{isPdf ? 'PDF' : 'PPT'}</Text>
+              {/* ─ Attached File Card ─ */}
+              <View style={styles.s3AttachedCard}>
+                <View style={styles.s3FileInfo}>
+                  <View style={styles.s3FileIconBox}>
+                    <Text style={styles.s3FileIconText}>
+                      {presentationFileName?.endsWith('.pdf') ? 'PDF' : 'PPT'}
+                    </Text>
                   </View>
-                  <View style={{ flex: 1, minWidth: 180 }}>
-                    <Text style={st.fileName} numberOfLines={2}>{presentationFileName}</Text>
-                    <Text style={st.fileKey} numberOfLines={1}>S3 key: {presentationS3Key}</Text>
-                    <Text style={st.fileUrl} numberOfLines={1}>{presentationUrl}</Text>
-                    <View style={st.fileMeta}>
-                      <View style={st.storedPill}>
-                        <Ionicons name="lock-closed" size={11} color="#FFFFFF" />
-                        <Text style={st.storedText}>Stored on S3, AES-256</Text>
+                  <View style={styles.s3MetaBox}>
+                    <Text style={styles.s3FileName}>{presentationFileName}</Text>
+                    <Text style={styles.s3KeyText}>S3 Key: {presentationS3Key}</Text>
+                    <Text style={styles.s3UrlText} numberOfLines={1}>{presentationUrl}</Text>
+                    <View style={styles.s3Row}>
+                      <View style={styles.s3StatusPill}>
+                        <Text style={styles.s3StatusText}>STORED — AWS S3 (AES-256)</Text>
                       </View>
                       {presentationFileSize > 0 && (
-                        <View style={st.sizePill}>
-                          <Text style={st.sizeText}>{formatFileSize(presentationFileSize)}</Text>
-                        </View>
+                        <Text style={styles.fileSizeText}>{formatFileSize(presentationFileSize)}</Text>
                       )}
                     </View>
                   </View>
-                  <Btn
-                    size="sm"
-                    tone="paper"
-                    icon="swap-horizontal"
-                    title="Replace file"
-                    onPress={() => {
-                      setPresentationS3Key('');
-                      setPresentationUrl('');
-                      setPresentationFileName('');
-                      setPresentationFileSize(0);
-                      setPresentationExtractedText('');
-                      setUploadMsg('');
-                      onSaveContent({
-                        richText,
-                        presentationS3Key: '',
-                        presentationUrl: '',
-                        presentationFileName: '',
-                        presentationFileSize: 0,
-                        presentationExtractedText: '',
-                        summaryText,
-                        summaryBullets,
-                      }, title, status);
-                    }}
+                </View>
+                <Pressable
+                  style={styles.replaceBtn}
+                  onPress={() => {
+                    setPresentationS3Key('');
+                    setPresentationUrl('');
+                    setPresentationFileName('');
+                    setPresentationFileSize(0);
+                    setPresentationExtractedText('');
+                    setUploadMsg('');
+                    onSaveContent({
+                      richText,
+                      presentationS3Key: '',
+                      presentationUrl: '',
+                      presentationFileName: '',
+                      presentationFileSize: 0,
+                      presentationExtractedText: '',
+                      summaryText,
+                      summaryBullets,
+                    }, title, status);
+                  }}
+                >
+                  <Text style={styles.replaceBtnText}>Replace File</Text>
+                </Pressable>
+              </View>
+
+              {/* Live Embedded Slide Presentation Viewer */}
+              {presentationUrl ? (
+                <View style={{ marginTop: 16 }}>
+                  <Text style={{ fontSize: 13, fontWeight: '700', color: COLORS.text, marginBottom: 6 }}>
+                    Live Presentation Preview & Presenter Mode
+                  </Text>
+                  <PresentationViewer
+                    url={presentationUrl}
+                    fileName={presentationFileName || `${title}.pptx`}
+                    fileSize={presentationFileSize}
+                    s3Key={presentationS3Key}
+                    minHeight={500}
                   />
                 </View>
-
-                {/* Live Embedded Slide Presentation Viewer */}
-                {presentationUrl ? (
-                  <View style={{ marginTop: 18 }}>
-                    <View style={st.previewHead}>
-                      <Ionicons name="play-circle" size={20} color={C.coralDeep} />
-                      <Text style={st.previewTitle}>Preview and presenter mode</Text>
-                    </View>
-                    <View style={st.viewerFrame}>
-                      <PresentationViewer
-                        url={presentationUrl}
-                        fileName={presentationFileName || `${title}.pptx`}
-                        fileSize={presentationFileSize}
-                        s3Key={presentationS3Key}
-                        minHeight={500}
-                      />
-                    </View>
-                  </View>
-                ) : null}
+              ) : null}
               </>
             ) : (
               /* ─ Drag & Drop Upload Zone ─ */
               Platform.OS === 'web' ? (
                 <View
-                  style={[st.dropzone, isDragOver && st.dropzoneActive]}
+                  style={[styles.dropzone, isDragOver && styles.dropzoneActive]}
                   // @ts-ignore web-only props
                   onDragOver={(e: any) => { e.preventDefault(); setIsDragOver(true); }}
                   onDragLeave={() => setIsDragOver(false)}
                   onDrop={handleDrop}
                 >
-                  <Bob active={isDragOver}>
-                    <View style={[st.dropIcon, isDragOver && { backgroundColor: C.yellow }]}>
-                      <Ionicons name={isUploading ? 'sync' : 'cloud-upload'} size={30} color={C.ink} />
-                    </View>
-                  </Bob>
-                  <Text style={st.dropTitle}>
-                    {isUploading ? 'Sending to AWS S3...' : isDragOver ? 'Let go to upload' : 'Drop your slides here'}
+                  <Text style={styles.dropzoneIcon}>
+                    {isUploading ? 'UPLOADING...' : isDragOver ? 'DROP FILE HERE' : 'DRAG & DROP'}
                   </Text>
-                  <Text style={st.dropSub}>.pptx, .ppt or .pdf, up to 50 MB</Text>
+                  <Text style={styles.dropzoneTitle}>
+                    {isUploading ? 'Transferring to AWS S3...' : 'Drop your presentation file here'}
+                  </Text>
+                  <Text style={styles.dropzoneSubtitle}>Supported formats: .PPTX, .PPT, .PDF — Max 50 MB</Text>
 
                   {!isUploading && (
                     <>
-                      <View style={st.orRow}>
-                        <View style={st.orLine} />
-                        <Text style={st.orText}>or</Text>
-                        <View style={st.orLine} />
+                      <View style={styles.dropzoneOrRow}>
+                        <View style={styles.dropzoneOrLine} />
+                        <Text style={styles.dropzoneOrText}>or</Text>
+                        <View style={styles.dropzoneOrLine} />
                       </View>
-                      <Btn size="sm" tone="blue" icon="folder-open" title="Browse files" onPress={() => fileInputRef.current?.click()} />
+                      <Pressable
+                        style={styles.browseBtn}
+                        onPress={() => fileInputRef.current?.click()}
+                      >
+                        <Text style={styles.browseBtnText}>Browse File</Text>
+                      </Pressable>
                       {/* @ts-ignore hidden input for web */}
                       <input
                         ref={fileInputRef as any}
@@ -461,161 +451,392 @@ export function TopicContentStudio({
                     </>
                   )}
 
-                  {uploadMsg ? <Text style={st.uploadMsg}>{uploadMsg}</Text> : null}
+                  {uploadMsg ? (
+                    <Text style={styles.uploadStatusLabel}>{uploadMsg}</Text>
+                  ) : null}
                 </View>
               ) : (
                 /* Native fallback */
-                <View style={st.dropzone}>
-                  <Ionicons name="desktop-outline" size={28} color={C.ink} />
-                  <Text style={st.dropTitle}>Upload from a browser</Text>
-                  <Text style={st.dropSub}>Open this dashboard in a web browser to upload slides.</Text>
+                <View style={styles.dropzone}>
+                  <Text style={styles.dropzoneTitle}>File Upload</Text>
+                  <Text style={styles.dropzoneSubtitle}>
+                    Open this dashboard in a web browser to use drag-and-drop file upload.
+                  </Text>
                 </View>
               )
             )}
-          </Pop>
+          </View>
         )}
 
         {/* ── TAB 3: SUMMARY ──────────────────────────────────── */}
         {activeTab === 'summary' && (
-          <Pop key="summary" from={10}>
-            <Banner icon="sparkles" tint={C.yellow} title="Summary" sub="Write one yourself, or draft it from the lesson and slides." />
-
-            <View style={st.panel}>
-              <View style={st.panelHead}>
-                <Text style={st.panelTitle}>Lesson summary</Text>
-                <Btn
-                  size="sm"
-                  tone="blue"
-                  icon="sparkles"
-                  title={isGeneratingSummary ? 'Drafting...' : 'Draft from content'}
-                  disabled={isGeneratingSummary}
-                  onPress={handleGenerateSummary}
-                />
-              </View>
-              <Text style={st.panelHint}>Edit the draft freely with the same formatting tools.</Text>
-              <RichTextEditor value={summaryText} onChange={setSummaryText} placeholder="Write or draft a lesson summary..." minHeight={150} />
+          <View style={styles.tabPane}>
+            <View style={styles.paneBanner}>
+              <Text style={styles.paneBannerTitle}>Lesson Summary & Key Takeaways</Text>
+              <Text style={styles.paneBannerSub}>
+                Write a summary manually, or auto-generate one from your text content.
+              </Text>
             </View>
 
-            <View style={st.panel}>
-              <Text style={st.panelTitle}>Key takeaways</Text>
-              <Text style={st.panelHint}>Short points students should remember from this topic.</Text>
+            {/* Summary Text Area (mirrors text content tab) */}
+            <View style={styles.summarySection}>
+              <View style={styles.summarySectionHeader}>
+                <Text style={styles.summarySectionTitle}>LESSON SUMMARY</Text>
+                <Pressable
+                  style={[styles.autoGenBtn, isGeneratingSummary && styles.autoGenBtnDisabled]}
+                  onPress={handleGenerateSummary}
+                  disabled={isGeneratingSummary}
+                >
+                  <Text style={styles.autoGenBtnText}>
+                    {isGeneratingSummary ? 'Generating...' : 'Auto-Generate from Content'}
+                  </Text>
+                </Pressable>
+              </View>
+              <Text style={styles.summaryHint}>
+                Generate a draft from the lesson and presentation, then edit it freely with the same formatting tools.
+              </Text>
+              <RichTextEditor value={summaryText} onChange={setSummaryText} placeholder="Enter or generate a lesson summary..." minHeight={150} />
+            </View>
 
-              <View style={{ marginBottom: 12, gap: 8 }}>
+            {/* Key Takeaway Bullets */}
+            <View style={styles.summarySection}>
+              <Text style={styles.summarySectionTitle}>KEY TAKEAWAY BULLETS</Text>
+              <Text style={styles.summaryHint}>
+                Add concise bullet points students should remember from this topic.
+              </Text>
+
+              <View style={styles.bulletList}>
                 {summaryBullets.length === 0 ? (
-                  <Text style={st.emptyBullets}>No takeaways yet. Add the first one below.</Text>
+                  <Text style={styles.emptyBulletsText}>No takeaway bullets added yet.</Text>
                 ) : (
                   summaryBullets.map((b, idx) => (
-                    <Pop key={`${idx}-${b}`} from={8}>
-                      <View style={st.bulletRow}>
-                        <View style={st.bulletDot} />
-                        <Text style={st.bulletText}>{b}</Text>
-                        <IconBtn icon="close" size={26} label="Remove takeaway" onPress={() => removeBullet(idx)} />
-                      </View>
-                    </Pop>
+                    <View key={idx} style={styles.bulletRow}>
+                      <View style={styles.bulletDot} />
+                      <Text style={styles.bulletContent}>{b}</Text>
+                      <Pressable onPress={() => removeBullet(idx)} style={styles.removeBulletBtn}>
+                        <Text style={styles.removeBulletText}>Remove</Text>
+                      </Pressable>
+                    </View>
                   ))
                 )}
               </View>
 
-              <View style={st.addRow}>
-                <Field
-                  containerStyle={{ flex: 1 }}
-                  placeholder="Type a takeaway..."
+              <View style={styles.addBulletRow}>
+                <TextInput
+                  style={styles.bulletInput}
+                  placeholder="Type a key takeaway..."
+                  placeholderTextColor={COLORS.textMuted}
                   value={newBulletText}
                   onChangeText={setNewBulletText}
                   onSubmitEditing={addBullet}
                   returnKeyType="done"
                 />
-                <Btn size="sm" tone="yellow" icon="add" title="Add" onPress={addBullet} />
+                <Button
+                  title="Add"
+                  variant="secondary"
+                  size="sm"
+                  onPress={addBullet}
+                />
               </View>
             </View>
-          </Pop>
+          </View>
         )}
       </View>
 
       {/* Save Action Bar */}
-      <View style={st.footer}>
-        <View style={{ flex: 1 }}>
-          {saveSuccess ? (
-            <Pop from={6}>
-              <View style={st.savedNote}>
-                <Ionicons name="checkmark-circle" size={18} color={C.greenDeep} />
-                <Text style={st.savedText}>All changes saved.</Text>
-              </View>
-            </Pop>
-          ) : null}
+      <View style={styles.studioFooter}>
+        <View style={styles.saveNotice}>
+          {saveSuccess && <Text style={styles.saveSuccessText}>All topic changes saved successfully.</Text>}
         </View>
-        <Btn
-          title={saving ? 'Saving...' : saveSuccess ? 'Saved' : 'Save topic'}
-          tone={saveSuccess ? 'green' : 'coral'}
-          icon={saveSuccess ? 'checkmark' : 'save'}
+        <Button
+          title={saving ? 'Saving...' : 'Save Topic'}
+          variant="primary"
           loading={saving}
           onPress={handleSave}
+          style={styles.saveButton}
         />
       </View>
     </View>
   );
 }
 
-const st = StyleSheet.create({
-  card: { backgroundColor: C.paper, borderRadius: 24, borderWidth: 3, borderColor: C.ink, overflow: 'hidden' },
-  header: { backgroundColor: C.cream, borderBottomWidth: 3, borderBottomColor: C.ink, paddingTop: 26, paddingHorizontal: 16, paddingBottom: 14 },
-  titleRow: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 12, marginBottom: 14 },
-  statusBox: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: C.yellow, borderWidth: 2.5, borderColor: C.ink, borderRadius: 16, paddingHorizontal: 10, paddingVertical: 6 },
-  tabRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
-  tab: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 14, height: 38, borderRadius: 19, borderWidth: 2.5, borderColor: 'transparent' },
-  tabActive: { backgroundColor: C.yellow, borderColor: C.ink },
-  tabText: { fontFamily: F.bold, fontSize: 13.5, color: C.ink },
+const styles = StyleSheet.create({
+  cardContainer: {
+    backgroundColor: COLORS.white,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    overflow: 'hidden',
+    marginBottom: 20,
+  },
+  studioHeader: {
+    backgroundColor: '#FAFAFA',
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.border,
+    paddingTop: 16,
+    paddingHorizontal: 16,
+  },
+  titleEditRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    marginBottom: 14,
+  },
+  topicTitleInput: {
+    flex: 1,
+    fontSize: 16,
+    fontWeight: '800',
+    color: COLORS.text,
+    backgroundColor: COLORS.white,
+    borderRadius: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+  },
+  statusToggle: {
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 4,
+    borderWidth: 1,
+  },
+  statusPub: { backgroundColor: '#EAFAF1', borderColor: '#A9DFBF' },
+  statusDft: { backgroundColor: '#FEF9E7', borderColor: '#F9E79F' },
+  statusText: { fontSize: 10, fontWeight: '800', letterSpacing: 0.5 },
+  statusTextPub: { color: '#27AE60' },
+  statusTextDft: { color: '#D35400' },
+  tabNavRow: { flexDirection: 'row', gap: 4 },
+  tabButton: { paddingVertical: 10, paddingHorizontal: 14, borderTopLeftRadius: 6, borderTopRightRadius: 6 },
+  tabButtonActive: {
+    backgroundColor: COLORS.white,
+    borderWidth: 1,
+    borderBottomWidth: 0,
+    borderColor: COLORS.border,
+  },
+  tabLabel: { fontSize: 12, fontWeight: '600', color: COLORS.textSecondary },
+  tabLabelActive: { color: COLORS.primary, fontWeight: '700' },
+  studioBody: { padding: 16, backgroundColor: COLORS.white, minHeight: 280 },
+  tabPane: { flex: 1 },
+  paneBanner: { marginBottom: 14 },
+  paneBannerTitle: { fontSize: 13, fontWeight: '700', color: COLORS.text },
+  paneBannerSub: { fontSize: 11, color: COLORS.textSecondary, marginTop: 2 },
 
-  body: { padding: 16, minHeight: 280 },
+  // Text Content
+  richToolbar: {
+    flexDirection: 'row',
+    gap: 6,
+    backgroundColor: '#F8F9FA',
+    padding: 6,
+    borderRadius: 6,
+    marginBottom: 8,
+    borderWidth: 1,
+    borderColor: '#EAECEF',
+    flexWrap: 'wrap',
+  },
+  toolBtn: {
+    backgroundColor: COLORS.white,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 4,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+  },
+  toolBtnText: { fontSize: 11, fontWeight: '600', color: COLORS.textSecondary },
+  richTextArea: {
+    backgroundColor: '#FCFCFC',
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    padding: 12,
+    fontSize: 13,
+    color: COLORS.text,
+    minHeight: 220,
+    lineHeight: 20,
+    fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
+  },
+  charCountRow: { alignItems: 'flex-end', marginTop: 4 },
+  charCount: { fontSize: 10, color: COLORS.textMuted },
 
-  banner: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 16 },
-  bannerIcon: { width: 40, height: 40, borderRadius: 20, borderWidth: 2.5, borderColor: C.ink, alignItems: 'center', justifyContent: 'center' },
-  bannerTitle: { fontFamily: F.display, fontSize: 17, color: C.ink },
-  bannerSub: { fontFamily: F.medium, fontSize: 12.5, color: C.muted, marginTop: 1 },
+  // Presentation Upload
+  errorBanner: {
+    backgroundColor: '#FDEDEC',
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: '#FADBD8',
+    padding: 10,
+    marginBottom: 12,
+  },
+  errorBannerText: { fontSize: 12, color: COLORS.error, fontWeight: '600' },
+  dropzone: {
+    backgroundColor: '#FCFCFC',
+    borderWidth: 2,
+    borderColor: '#DDE2EA',
+    borderStyle: 'dashed',
+    borderRadius: 10,
+    padding: 32,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    minHeight: 200,
+  },
+  dropzoneActive: {
+    borderColor: COLORS.primary,
+    backgroundColor: '#FEF5F5',
+  },
+  dropzoneIcon: {
+    fontSize: 12,
+    fontWeight: '800',
+    letterSpacing: 2,
+    color: COLORS.primary,
+    marginBottom: 4,
+  },
+  dropzoneTitle: { fontSize: 15, fontWeight: '700', color: COLORS.text },
+  dropzoneSubtitle: { fontSize: 11, color: COLORS.textMuted, marginTop: 2, textAlign: 'center' },
+  dropzoneOrRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginVertical: 12 },
+  dropzoneOrLine: { flex: 1, height: 1, backgroundColor: COLORS.border },
+  dropzoneOrText: { fontSize: 11, color: COLORS.textMuted, fontWeight: '600' },
+  browseBtn: {
+    backgroundColor: COLORS.white,
+    borderWidth: 1.5,
+    borderColor: COLORS.primary,
+    borderRadius: 6,
+    paddingHorizontal: 20,
+    paddingVertical: 9,
+  },
+  browseBtnText: { fontSize: 13, fontWeight: '700', color: COLORS.primary },
+  uploadStatusLabel: { fontSize: 12, color: '#27AE60', fontWeight: '700', marginTop: 8 },
+  s3AttachedCard: {
+    backgroundColor: '#F8F9FA',
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    borderRadius: 8,
+    padding: 16,
+    gap: 14,
+  },
+  s3FileInfo: { flexDirection: 'row', alignItems: 'flex-start', gap: 14 },
+  s3FileIconBox: {
+    width: 48,
+    height: 48,
+    backgroundColor: COLORS.primary,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  s3FileIconText: { color: COLORS.white, fontSize: 11, fontWeight: '800' },
+  s3MetaBox: { flex: 1 },
+  s3FileName: { fontSize: 14, fontWeight: '700', color: COLORS.text },
+  s3KeyText: { fontSize: 10, color: COLORS.textSecondary, marginTop: 3, fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace' },
+  s3UrlText: { fontSize: 10, color: COLORS.textMuted, marginTop: 2 },
+  s3Row: { flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 8 },
+  s3StatusPill: {
+    backgroundColor: '#EAFAF1',
+    borderRadius: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    alignSelf: 'flex-start',
+  },
+  s3StatusText: { fontSize: 10, fontWeight: '700', color: '#27AE60' },
+  fileSizeText: { fontSize: 10, color: COLORS.textMuted, fontWeight: '600' },
+  replaceBtn: {
+    alignSelf: 'flex-start',
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    borderRadius: 6,
+    paddingHorizontal: 14,
+    paddingVertical: 7,
+  },
+  replaceBtnText: { fontSize: 12, fontWeight: '700', color: COLORS.textSecondary },
 
-  countRow: { alignItems: 'flex-end', marginTop: 10 },
-  countChip: { flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: C.cream, borderWidth: 2, borderColor: C.ink, borderRadius: 999, paddingHorizontal: 10, paddingVertical: 3 },
-  countText: { fontFamily: F.bold, fontSize: 11.5, color: C.ink },
+  // Summary
+  summarySection: {
+    marginBottom: 20,
+    backgroundColor: '#FAFAFA',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    padding: 14,
+  },
+  summarySectionHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 6,
+  },
+  summarySectionTitle: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: COLORS.textMuted,
+    letterSpacing: 0.6,
+    textTransform: 'uppercase',
+  },
+  autoGenBtn: {
+    backgroundColor: COLORS.white,
+    borderWidth: 1.5,
+    borderColor: COLORS.primary,
+    borderRadius: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 5,
+  },
+  autoGenBtnDisabled: { opacity: 0.5 },
+  autoGenBtnText: { fontSize: 11, fontWeight: '700', color: COLORS.primary },
+  summaryHint: { fontSize: 11, color: COLORS.textSecondary, marginBottom: 10 },
+  summaryTextArea: {
+    backgroundColor: COLORS.white,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    padding: 12,
+    fontSize: 13,
+    color: COLORS.text,
+    minHeight: 130,
+    lineHeight: 20,
+    textAlignVertical: 'top',
+  },
+  bulletList: { marginBottom: 12 },
+  emptyBulletsText: { fontSize: 12, color: COLORS.textMuted, fontStyle: 'italic', paddingVertical: 6 },
+  bulletRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F0F0F0',
+    gap: 10,
+  },
+  bulletDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: COLORS.primary,
+    flexShrink: 0,
+  },
+  bulletContent: { flex: 1, fontSize: 12, color: COLORS.text },
+  removeBulletBtn: { paddingHorizontal: 6, paddingVertical: 2 },
+  removeBulletText: { fontSize: 10, color: COLORS.error, fontWeight: '700' },
+  addBulletRow: { flexDirection: 'row', gap: 8, alignItems: 'center' },
+  bulletInput: {
+    flex: 1,
+    backgroundColor: COLORS.white,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    fontSize: 12,
+    color: COLORS.text,
+  },
 
-  errorBanner: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: '#FFE3DE', borderWidth: 2.5, borderColor: C.red, borderRadius: 14, padding: 10, marginBottom: 12 },
-  errorText: { flex: 1, fontFamily: F.bold, fontSize: 13, color: C.red },
-
-  dropzone: { alignItems: 'center', justifyContent: 'center', gap: 6, minHeight: 230, padding: 28, borderRadius: 22, borderWidth: 3, borderColor: C.ink, borderStyle: 'dashed', backgroundColor: C.cream },
-  dropzoneActive: { backgroundColor: C.pink, borderColor: C.coralDeep },
-  dropIcon: { width: 64, height: 64, borderRadius: 32, borderWidth: 2.5, borderColor: C.ink, backgroundColor: C.paper, alignItems: 'center', justifyContent: 'center' },
-  dropTitle: { fontFamily: F.display, fontSize: 18, color: C.ink, marginTop: 8, textAlign: 'center' },
-  dropSub: { fontFamily: F.medium, fontSize: 12.5, color: C.muted, textAlign: 'center' },
-  orRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginVertical: 10, width: 180 },
-  orLine: { flex: 1, height: 2.5, borderRadius: 2, backgroundColor: C.ink, opacity: 0.2 },
-  orText: { fontFamily: F.bold, fontSize: 12, color: C.muted },
-  uploadMsg: { fontFamily: F.bold, fontSize: 13, color: C.greenDeep, marginTop: 10, textAlign: 'center' },
-
-  fileCard: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 14, backgroundColor: C.cream, borderWidth: 3, borderColor: C.ink, borderRadius: 20, padding: 14 },
-  fileBadge: { width: 56, height: 56, borderRadius: 16, borderWidth: 2.5, borderColor: C.ink, alignItems: 'center', justifyContent: 'center', transform: [{ rotate: '-4deg' }] },
-  fileBadgeText: { fontFamily: F.display, fontSize: 11, color: '#FFFFFF' },
-  fileName: { fontFamily: F.bold, fontSize: 15, color: C.ink },
-  fileKey: { fontFamily: F.medium, fontSize: 11, color: C.muted, marginTop: 3 },
-  fileUrl: { fontFamily: F.medium, fontSize: 11, color: C.muted, marginTop: 1 },
-  fileMeta: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 8, marginTop: 8 },
-  storedPill: { flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: C.green, borderWidth: 2, borderColor: C.ink, borderRadius: 999, paddingHorizontal: 9, paddingVertical: 2 },
-  storedText: { fontFamily: F.bold, fontSize: 11, color: '#FFFFFF' },
-  sizePill: { backgroundColor: C.paper, borderWidth: 2, borderColor: C.ink, borderRadius: 999, paddingHorizontal: 9, paddingVertical: 2 },
-  sizeText: { fontFamily: F.bold, fontSize: 11, color: C.ink },
-  previewHead: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 8 },
-  previewTitle: { fontFamily: F.bold, fontSize: 14, color: C.ink },
-  viewerFrame: { borderWidth: 3, borderColor: C.ink, borderRadius: 20, overflow: 'hidden' },
-
-  panel: { backgroundColor: C.cream, borderWidth: 2.5, borderColor: C.ink, borderRadius: 20, padding: 14, marginBottom: 18 },
-  panelHead: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'center', gap: 10 },
-  panelTitle: { fontFamily: F.display, fontSize: 16, color: C.ink },
-  panelHint: { fontFamily: F.medium, fontSize: 12.5, color: C.muted, marginTop: 2, marginBottom: 12 },
-  emptyBullets: { fontFamily: F.medium, fontSize: 13, color: C.muted, paddingVertical: 4 },
-  bulletRow: { flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: C.paper, borderWidth: 2.5, borderColor: C.ink, borderRadius: 14, paddingVertical: 8, paddingLeft: 12, paddingRight: 8 },
-  bulletDot: { width: 12, height: 12, borderRadius: 6, backgroundColor: C.coral, borderWidth: 2, borderColor: C.ink },
-  bulletText: { flex: 1, fontFamily: F.medium, fontSize: 13.5, color: C.ink, lineHeight: 19 },
-  addRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
-
-  footer: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 16, paddingVertical: 12, backgroundColor: C.cream, borderTopWidth: 3, borderTopColor: C.ink },
-  savedNote: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  savedText: { fontFamily: F.bold, fontSize: 13, color: C.greenDeep },
+  // Footer
+  studioFooter: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    backgroundColor: '#FAFAFA',
+    borderTopWidth: 1,
+    borderTopColor: COLORS.border,
+  },
+  saveNotice: { flex: 1 },
+  saveSuccessText: { fontSize: 11, fontWeight: '700', color: '#27AE60' },
+  saveButton: { paddingHorizontal: 20 },
 });

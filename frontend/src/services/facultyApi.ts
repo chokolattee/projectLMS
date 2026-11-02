@@ -4,6 +4,7 @@ import {
   UpdateSubjectPayload,
   TopicContent,
   WaygroundQuiz,
+  EnrolledStudent,
 } from '@/types/faculty';
 
 export interface SubjectProgressReport {
@@ -51,6 +52,24 @@ export const facultyApi = {
       return await res.json();
     } catch {
       return { success: false, message: 'Network error loading progress report' };
+    }
+  },
+  getSubjectStudents: async (token: string | null, subjectId: string): Promise<{ success: boolean; data?: EnrolledStudent[]; message?: string }> => {
+    try {
+      const res = await fetch(`${API_BASE}/faculty/subjects/${subjectId}/students`, {
+        headers: getHeaders(token),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        return { success: false, message: data.message || `Unable to load students (${res.status}).` };
+      }
+      return {
+        success: Boolean(data.success),
+        data: Array.isArray(data.data) ? data.data : undefined,
+        message: data.message,
+      };
+    } catch {
+      return { success: false, message: 'Network error loading students' };
     }
   },
   generateTopicSummary: async (token: string | null, richText: string, presentationText: string): Promise<{ success: boolean; data?: { summary: string }; message?: string }> => {

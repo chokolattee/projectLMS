@@ -1,638 +1,125 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   View,
   Text,
-  Image,
   StyleSheet,
   ScrollView,
   ActivityIndicator,
   Pressable,
-  Animated,
-  Easing,
-  AccessibilityInfo,
   useWindowDimensions,
+  Linking,
   Alert,
-  NativeSyntheticEvent,
-  NativeScrollEvent,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
-import { Ionicons } from '@expo/vector-icons';
-import {
-  useFonts,
-  Outfit_400Regular,
-  Outfit_500Medium,
-  Outfit_700Bold,
-} from '@expo-google-fonts/outfit';
-import { TitanOne_400Regular } from '@expo-google-fonts/titan-one';
 import { useAuth } from '@/context/AuthContext';
-import { DashboardData } from '@/types/auth';
-import { studentApi, StudentSubjectDetails } from '@/services/studentApi';
+import { DashboardData, EnrolledSubject } from '@/types/auth';
+import { COLORS } from '@/constants/colors';
+import { Button } from '@/components/ui/Button';
+import {
+  studentApi,
+  StudentSubjectDetails,
+  StudentModule,
+  StudentTopic,
+} from '@/services/studentApi';
 import { WaygroundStudentQuizModal } from '@/components/student/WaygroundStudentQuizModal';
 import { PresentationViewer } from '@/components/presentation/PresentationViewer';
+import { StreakBadge } from '@/components/student/StreakBadge';
 
-/* ------------------------------------------------------------------ */
-/*  Brand tokens (same as login + welcome)                             */
-/* ------------------------------------------------------------------ */
-const C = {
-  bg: '#FDE680',
-  yellow: '#FFE97F',
-  coral: '#FF6B81',
-  coralDeep: '#D94D63',
-  pink: '#FFD1D4',
-  pinkDeep: '#E8A9AE',
-  cream: '#FFF5BA',
-  red: '#D4381C',
-  blue: '#00A3EB',
-  blueDeep: '#0079AD',
-  ink: '#4A1A24',
-  muted: '#8F5F68',
-  paper: '#FFFBF0',
-  green: '#2FB57A',
-  greenDeep: '#1E8A5B',
-};
-const F = {
-  body: 'Outfit_400Regular',
-  medium: 'Outfit_500Medium',
-  bold: 'Outfit_700Bold',
-  display: 'TitanOne_400Regular',
-};
-
-const ACCENTS = [
-  { face: C.blue, deep: C.blueDeep, fg: '#FFFFFF' },
-  { face: C.coral, deep: C.coralDeep, fg: C.cream },
-  { face: C.cream, deep: '#E8D77A', fg: C.ink },
-  { face: C.pink, deep: C.pinkDeep, fg: C.ink },
-];
-
-function greeting(): string {
-  const h = new Date().getHours();
-  if (h < 12) return 'Good morning';
-  if (h < 17) return 'Good afternoon';
-  return 'Good evening';
+function getTimeOfDay(): string {
+  const hour = new Date().getHours();
+  if (hour < 12) return 'Morning';
+  if (hour < 17) return 'Afternoon';
+  return 'Evening';
 }
 
-/* ------------------------------------------------------------------ */
-/*  Small shared pieces                                                */
-/* ------------------------------------------------------------------ */
-function useBubble() {
-  const anim = useRef(new Animated.Value(0)).current;
-  const [text, setText] = useState('');
-  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const say = (msg: string, ms = 2600) => {
-    if (timer.current) clearTimeout(timer.current);
-    setText(msg);
-    anim.setValue(0);
-    Animated.spring(anim, { toValue: 1, friction: 5, tension: 140, useNativeDriver: true }).start();
-    timer.current = setTimeout(() => {
-      Animated.timing(anim, { toValue: 0, duration: 200, useNativeDriver: true }).start();
-    }, ms);
-  };
-  useEffect(() => () => { if (timer.current) clearTimeout(timer.current); }, []);
-  return { anim, text, say };
-}
-
-function useBob(reduce: boolean, ms = 1700) {
-  const v = useRef(new Animated.Value(0)).current;
-  useEffect(() => {
-    if (reduce) return;
-    const l = Animated.loop(
-      Animated.sequence([
-        Animated.timing(v, { toValue: 1, duration: ms, easing: Easing.inOut(Easing.sin), useNativeDriver: true }),
-        Animated.timing(v, { toValue: 0, duration: ms, easing: Easing.inOut(Easing.sin), useNativeDriver: true }),
-      ])
-    );
-    l.start();
-    return () => l.stop();
-  }, [reduce, ms, v]);
-  return v;
-}
-
-function Bubble({
-  text,
-  anim,
-  style,
-  center,
-}: {
-  text: string;
-  anim: Animated.Value;
-  style?: any;
-  center?: boolean;
-}) {
+function StatCard({ label, value, bgColor }: { label: string; value: string | number; bgColor: string }) {
   return (
-    <Animated.View
-      pointerEvents="none"
-      style={[
-        s.bubble,
-        style,
-        { opacity: anim, transform: [{ scale: anim.interpolate({ inputRange: [0, 1], outputRange: [0.6, 1] }) }] },
-      ]}
-    >
-      <Text style={s.bubbleText}>{text}</Text>
-      <View style={[s.bubbleTail, center && { left: '50%', marginLeft: -6 }]} />
-    </Animated.View>
-  );
-}
-
-/** Confetti pop. Bump `trigger` to fire it. */
-function Burst({ trigger, disabled }: { trigger: number; disabled?: boolean }) {
-  const v = useRef(new Animated.Value(0)).current;
-  useEffect(() => {
-    if (!trigger || disabled) return;
-    v.setValue(0);
-    Animated.timing(v, { toValue: 1, duration: 800, easing: Easing.out(Easing.cubic), useNativeDriver: true }).start();
-  }, [trigger, disabled, v]);
-  if (disabled) return null;
-  const colors = [C.coral, C.blue, C.cream, C.pink, C.green, C.red];
-  return (
-    <View pointerEvents="none" style={{ position: 'absolute', left: '50%', top: '45%', width: 0, height: 0, zIndex: 20 }}>
-      {Array.from({ length: 14 }).map((_, i) => {
-        const a = (i / 14) * Math.PI * 2;
-        const d = 80 + (i % 3) * 26;
-        return (
-          <Animated.View
-            key={i}
-            style={{
-              position: 'absolute',
-              width: 11,
-              height: 11,
-              borderRadius: i % 2 ? 6 : 3,
-              borderWidth: 2,
-              borderColor: C.ink,
-              backgroundColor: colors[i % colors.length],
-              opacity: v.interpolate({ inputRange: [0, 0.08, 0.8, 1], outputRange: [0, 1, 1, 0] }),
-              transform: [
-                { translateX: v.interpolate({ inputRange: [0, 1], outputRange: [0, Math.cos(a) * d] }) },
-                { translateY: v.interpolate({ inputRange: [0, 1], outputRange: [0, Math.sin(a) * d + 30] }) },
-                { rotate: v.interpolate({ inputRange: [0, 1], outputRange: ['0deg', `${(i % 2 ? 1 : -1) * 220}deg`] }) },
-                { scale: v.interpolate({ inputRange: [0, 0.2, 1], outputRange: [0.2, 1.2, 0.8] }) },
-              ],
-            }}
-          />
-        );
-      })}
+    <View style={[styles.statCard, { backgroundColor: bgColor }]}>
+      <Text style={styles.statValue}>{value}</Text>
+      <Text style={styles.statLabel}>{label}</Text>
     </View>
   );
 }
 
-/** Key-style button that sinks when pressed. */
-function Chunky({
-  children,
-  onPress,
-  face,
-  shadow,
-  radius = 16,
-  depth = 5,
-  style,
-  faceStyle,
-  disabled,
-  held,
-}: {
-  children: React.ReactNode;
-  onPress?: () => void;
-  face: string;
-  shadow: string;
-  radius?: number;
-  depth?: number;
-  style?: any;
-  faceStyle?: any;
-  disabled?: boolean;
-  held?: boolean;
-}) {
-  const p = useRef(new Animated.Value(held ? 1 : 0)).current;
-  const heldRef = useRef(!!held);
-  useEffect(() => {
-    heldRef.current = !!held;
-    Animated.spring(p, { toValue: held ? 1 : 0, friction: 6, tension: 120, useNativeDriver: true }).start();
-  }, [held, p]);
-  const rest = () =>
-    Animated.spring(p, { toValue: heldRef.current ? 1 : 0, friction: 5, useNativeDriver: true }).start();
-  return (
-    <Pressable
-      accessibilityRole="button"
-      disabled={disabled}
-      onPress={onPress}
-      onPressIn={() => Animated.timing(p, { toValue: 1, duration: 70, useNativeDriver: true }).start()}
-      onPressOut={rest}
-      style={[{ paddingBottom: depth, opacity: disabled ? 0.55 : 1 }, style]}
-    >
-      <View
-        style={{
-          position: 'absolute',
-          left: 0,
-          right: 0,
-          top: depth,
-          bottom: 0,
-          borderRadius: radius,
-          backgroundColor: shadow,
-          borderWidth: 2.5,
-          borderColor: C.ink,
-        }}
-      />
-      <Animated.View
-        style={[
-          {
-            backgroundColor: face,
-            borderRadius: radius,
-            borderWidth: 2.5,
-            borderColor: C.ink,
-            transform: [{ translateY: p.interpolate({ inputRange: [0, 1], outputRange: [0, depth] }) }],
-          },
-          faceStyle,
-        ]}
-      >
-        {children}
-      </Animated.View>
-    </Pressable>
-  );
-}
-
-function Btn({
-  label,
-  onPress,
-  tone = 'coral',
-  loading,
-  disabled,
-  icon,
-}: {
-  label: string;
-  onPress: () => void;
-  tone?: 'coral' | 'blue' | 'paper' | 'green';
-  loading?: boolean;
-  disabled?: boolean;
-  icon?: keyof typeof Ionicons.glyphMap;
-}) {
-  const t = {
-    coral: { face: C.coral, shadow: C.coralDeep, text: C.cream },
-    blue: { face: C.blue, shadow: C.blueDeep, text: '#FFFFFF' },
-    paper: { face: C.paper, shadow: C.pinkDeep, text: C.ink },
-    green: { face: C.green, shadow: C.greenDeep, text: '#FFFFFF' },
-  }[tone];
-  return (
-    <Chunky face={t.face} shadow={t.shadow} onPress={onPress} disabled={disabled || loading} faceStyle={s.btnFace}>
-      {loading ? (
-        <ActivityIndicator color={t.text} />
-      ) : (
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-          {icon ? <Ionicons name={icon} size={18} color={t.text} /> : null}
-          <Text style={[s.btnText, { color: t.text }]}>{label}</Text>
-        </View>
-      )}
-    </Chunky>
-  );
-}
-
-/** Number that rolls up from 0 when it mounts. */
-function CountUp({ to, decimals = 0, style }: { to: number; decimals?: number; style?: any }) {
-  const v = useRef(new Animated.Value(0)).current;
-  const [shown, setShown] = useState((0).toFixed(decimals));
-  useEffect(() => {
-    const id = v.addListener(({ value }) => setShown(value.toFixed(decimals)));
-    Animated.timing(v, { toValue: to, duration: 900, easing: Easing.out(Easing.cubic), useNativeDriver: false }).start();
-    return () => v.removeListener(id);
-  }, [to, decimals, v]);
-  return <Text style={style}>{shown}</Text>;
-}
-
-/* ------------------------------------------------------------------ */
-/*  Reading progress: sticks above the document while scrolling        */
-/* ------------------------------------------------------------------ */
-function ReadBar({ anim, pct, label }: { anim: Animated.Value; pct: number; label: string }) {
-  const done = pct >= 100;
-  const w = anim.interpolate({ inputRange: [0, 100], outputRange: ['0%', '100%'], extrapolate: 'clamp' });
-  return (
-    <View style={s.readWrap}>
-      <View style={s.readBar}>
-        <View style={[s.readIcon, done && { backgroundColor: C.green }]}>
-          <Ionicons name={done ? 'checkmark' : 'book'} size={14} color={done ? '#FFFFFF' : C.ink} />
-        </View>
-        <View style={s.readLabelBox}>
-          <Text style={s.readLabel} numberOfLines={1}>
-            {done ? 'Reached the end' : label}
-          </Text>
-        </View>
-        <View style={s.readTrackWrap}>
-          <View style={s.readTrack}>
-            <Animated.View style={[s.readFill, { width: w }, done && { backgroundColor: C.green }]} />
-          </View>
-          <Animated.View pointerEvents="none" style={[s.readMarker, { left: w }]}>
-            <Image source={require('@/assets/images/mascot.png')} style={{ width: 34, height: 30 }} resizeMode="contain" />
-          </Animated.View>
-        </View>
-        <Text style={s.readPct}>{pct}%</Text>
-      </View>
-    </View>
-  );
-}
-
-/* ------------------------------------------------------------------ */
-/*  Stat sticker: pops in once, then squishes + talks when tapped      */
-/* ------------------------------------------------------------------ */
-function StatSticker({
-  label,
-  icon,
-  accent,
-  rot,
-  radius = 20,
-  delay = 0,
-  children,
-  onTap,
-}: {
-  label: string;
-  icon: keyof typeof Ionicons.glyphMap;
-  accent: typeof ACCENTS[number];
-  rot: number;
-  radius?: number;
-  delay?: number;
-  children: React.ReactNode;
-  onTap: () => void;
-}) {
-  const sq = useRef(new Animated.Value(0)).current;
-  const enter = useRef(new Animated.Value(0)).current;
-  useEffect(() => {
-    Animated.spring(enter, { toValue: 1, delay, friction: 5, tension: 90, useNativeDriver: true }).start();
-  }, [delay, enter]);
-  const tap = () => {
-    sq.setValue(0);
-    Animated.sequence([
-      Animated.timing(sq, { toValue: 1, duration: 90, useNativeDriver: true }),
-      Animated.spring(sq, { toValue: 0, friction: 3, tension: 130, useNativeDriver: true }),
-    ]).start();
-    onTap();
-  };
-  return (
-    <Animated.View
-      style={{
-        flexGrow: 1,
-        flexBasis: 150,
-        opacity: enter,
-        transform: [
-          { scale: enter.interpolate({ inputRange: [0, 1], outputRange: [0.5, 1] }) },
-          { rotate: enter.interpolate({ inputRange: [0, 1], outputRange: [`${rot * 6}deg`, `${rot}deg`] }) },
-        ],
-      }}
-    >
-      <Animated.View
-        style={{
-          transform: [
-            { scaleX: sq.interpolate({ inputRange: [0, 1], outputRange: [1, 1.08] }) },
-            { scaleY: sq.interpolate({ inputRange: [0, 1], outputRange: [1, 0.9] }) },
-          ],
-        }}
-      >
-        <Chunky face={accent.face} shadow={accent.deep} radius={radius} depth={6} onPress={tap} faceStyle={{ padding: 16 }}>
-          <View style={s.statIcon}>
-            <Ionicons name={icon} size={16} color={C.ink} />
-          </View>
-          {children}
-          <Text style={[s.statLabel, { color: accent.fg }]}>{label}</Text>
-        </Chunky>
-      </Animated.View>
-    </Animated.View>
-  );
-}
-
-/* ------------------------------------------------------------------ */
-/*  Course folder: tab, peeking sheet, colored body, label sticker     */
-/* ------------------------------------------------------------------ */
-function FolderCard({
-  code,
-  title,
-  instructor,
-  schedule,
-  accent,
-  tilt,
-  width,
-  featured,
-  onPress,
-}: {
-  code: string;
-  title: string;
-  instructor?: string;
-  schedule?: string;
-  accent: typeof ACCENTS[number];
-  tilt: number;
-  width: any;
-  featured?: boolean;
-  onPress: () => void;
-}) {
-  const press = useRef(new Animated.Value(0)).current;
-  const lift = useRef(new Animated.Value(0)).current;
-  const sheetTo = (v: number) =>
-    Animated.spring(lift, { toValue: v, friction: 6, tension: 120, useNativeDriver: true }).start();
-  const DEPTH = 7;
-  return (
-    <Pressable
-      accessibilityRole="button"
-      onPress={onPress}
-      onPressIn={() => {
-        Animated.timing(press, { toValue: 1, duration: 70, useNativeDriver: true }).start();
-        sheetTo(1);
-      }}
-      onPressOut={() => {
-        Animated.spring(press, { toValue: 0, friction: 5, useNativeDriver: true }).start();
-        sheetTo(0);
-      }}
-      {...({ onHoverIn: () => sheetTo(1), onHoverOut: () => sheetTo(0) } as any)}
-      style={{ width, paddingBottom: DEPTH, transform: [{ rotate: `${tilt}deg` }] }}
-    >
-      <View style={[s.folderShadow, { backgroundColor: accent.deep, bottom: 0, top: 36 + DEPTH }]} />
-      <Animated.View style={{ transform: [{ translateY: press.interpolate({ inputRange: [0, 1], outputRange: [0, DEPTH] }) }] }}>
-        <Animated.View
-          pointerEvents="none"
-          style={[
-            s.folderSheet,
-            { transform: [{ translateY: lift.interpolate({ inputRange: [0, 1], outputRange: [0, -9] }) }] },
-          ]}
-        >
-          <View style={s.sheetLine} />
-          <View style={[s.sheetLine, { width: '60%' }]} />
-        </Animated.View>
-
-        <View style={[s.folderTab, { backgroundColor: accent.face }]}>
-          <Ionicons name="folder-open" size={15} color={accent.fg} />
-          <Text style={[s.folderTabText, { color: accent.fg }]} numberOfLines={1}>
-            {code}
-          </Text>
-        </View>
-
-        {featured && (
-          <View style={s.featBadge}>
-            <Ionicons name="star" size={13} color={C.ink} />
-            <Text style={s.featBadgeText}>Up first</Text>
-          </View>
-        )}
-
-        <View style={[s.folderBody, { backgroundColor: accent.face }]}>
-          <View style={s.folderLabel}>
-            <View style={{ flex: 1 }}>
-              <Text style={[s.courseTitle, featured && { fontSize: 22, lineHeight: 28 }]} numberOfLines={2}>
-                {title}
-              </Text>
-              <View style={{ gap: 5, marginTop: 8 }}>
-                {instructor ? (
-                  <View style={s.infoLine}>
-                    <Ionicons name="person-outline" size={14} color={C.muted} />
-                    <Text style={s.courseMeta} numberOfLines={1}>
-                      {instructor}
-                    </Text>
-                  </View>
-                ) : null}
-                <View style={s.infoLine}>
-                  <Ionicons name="time-outline" size={14} color={C.muted} />
-                  <Text style={s.courseMeta} numberOfLines={1}>
-                    {schedule || 'Schedule to be announced'}
-                  </Text>
-                </View>
-              </View>
-            </View>
-            <View style={s.courseGo}>
-              <Ionicons name="arrow-forward" size={20} color={C.ink} />
-            </View>
-          </View>
-        </View>
-      </Animated.View>
-    </Pressable>
-  );
-}
-
-/* ------------------------------------------------------------------ */
-/*  Screen                                                             */
-/* ------------------------------------------------------------------ */
 export default function DashboardScreen() {
   const { fetchDashboard, user, token, isLoading: authLoading } = useAuth();
   const { width } = useWindowDimensions();
   const isDesktop = width >= 900;
-  const [fontsLoaded] = useFonts({ Outfit_400Regular, Outfit_500Medium, Outfit_700Bold, TitanOne_400Regular });
 
-  const [reduce, setReduce] = useState(false);
+  // Role Gate: Redirect faculty and chairs
   useEffect(() => {
-    AccessibilityInfo.isReduceMotionEnabled().then(setReduce).catch(() => {});
-  }, []);
-
-  // Role gate
-  useEffect(() => {
-    if (authLoading) return;
-    if (!user) {
-      router.replace('/login' as any);
-      return;
-    }
-    if (user.role !== 'student') {
-      if (user.role === 'program chair' || user.role === 'program_chair' || user.role === 'admin') {
-        router.replace('/chair/dashboard' as any);
-      } else {
-        router.replace('/faculty/dashboard' as any);
+    if (!authLoading) {
+      if (!user) {
+        router.replace('/login' as any);
+        return;
+      }
+      if (user.role !== 'student') {
+        if (user.role === 'program chair' || user.role === 'program_chair' || user.role === 'admin') {
+          router.replace('/chair/dashboard' as any);
+        } else {
+          router.replace('/faculty/dashboard' as any);
+        }
       }
     }
   }, [authLoading, user]);
 
+  // Overall student stats & enrolled subjects
   const [data, setData] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
-  // Course viewer state
+  // NetAcad Course Viewer Workspace State
   const [activeSubjectId, setActiveSubjectId] = useState<string | null>(null);
   const [subjectDetails, setSubjectDetails] = useState<StudentSubjectDetails | null>(null);
   const [loadingSubject, setLoadingSubject] = useState(false);
   const [activeModuleId, setActiveModuleId] = useState<string | null>(null);
   const [activeTopicId, setActiveTopicId] = useState<string | null>(null);
   const [workspaceTab, setWorkspaceTab] = useState<'text' | 'presentation' | 'summary'>('text');
+
+  // Wayground Quiz Modal State
   const [showQuizModal, setShowQuizModal] = useState(false);
   const [markingReviewed, setMarkingReviewed] = useState(false);
   const [mobileCurriculumOpen, setMobileCurriculumOpen] = useState(false);
-  const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
-  const [burst, setBurst] = useState(0);
-
-  // Mascot
-  const bob = useBob(reduce);
-  const jump = useRef(new Animated.Value(0)).current;
-  const progressAnim = useRef(new Animated.Value(0)).current;
-  const { anim: bubbleAnim, text: bubbleText, say } = useBubble();
-  const pokeIdx = useRef(0);
-
-  const hop = () =>
-    Animated.sequence([
-      Animated.timing(jump, { toValue: -26, duration: 170, easing: Easing.out(Easing.quad), useNativeDriver: true }),
-      Animated.spring(jump, { toValue: 0, friction: 3, tension: 110, useNativeDriver: true }),
-    ]).start();
-
-  // Reading progress (how far through the document the learner has scrolled)
-  const scrollRef = useRef<React.ComponentRef<typeof ScrollView>>(null);
-  const readAnim = useRef(new Animated.Value(0)).current;
-  const [readPct, setReadPct] = useState(0);
-  const viewport = useRef({ y: 0, h: 0 });
-  const docBox = useRef({ y: 0, h: 0 });
-  const userScrolled = useRef(false);
-  const reachedEnd = useRef(false);
-
-  const recalcRead = () => {
-    const { y: off, h: vh } = viewport.current;
-    const { y: dy, h: dh } = docBox.current;
-    if (!dh || !vh) return;
-    const p = Math.max(0, Math.min(100, ((off + vh - dy) / dh) * 100));
-    readAnim.setValue(p);
-    const r = Math.round(p);
-    setReadPct((prev) => (prev === r ? prev : r));
-  };
-
-  const onMainScroll = (e: NativeSyntheticEvent<NativeScrollEvent>) => {
-    const { contentOffset, layoutMeasurement } = e.nativeEvent;
-    viewport.current = { y: contentOffset.y, h: layoutMeasurement.height };
-    if (contentOffset.y > 20) userScrolled.current = true;
-    recalcRead();
-  };
+  const [timeOfDay, setTimeOfDay] = useState('');
 
   useEffect(() => {
-    if (!authLoading) loadDashboard();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    if (!authLoading) {
+      loadDashboard();
+      setTimeOfDay(getTimeOfDay());
+    }
   }, [authLoading]);
 
   const loadDashboard = async () => {
     setLoading(true);
     setError('');
     const result = await fetchDashboard();
-    if (result.success && result.data) setData(result.data);
-    else setError(result.message || 'Failed to load your courses');
+    if (result.success && result.data) {
+      setData(result.data);
+    } else {
+      setError(result.message || 'Failed to load dashboard');
+    }
     setLoading(false);
   };
-
-  // Animate the trail marker + greet once data arrives
-  const academics = data?.academics;
-  const profile = data?.profile;
-  const pct = academics?.totalSubjects
-    ? Math.min(Math.round(((academics.completedSubjects ?? 0) / academics.totalSubjects) * 100), 100)
-    : 0;
-
-  useEffect(() => {
-    if (!data) return;
-    Animated.timing(progressAnim, {
-      toValue: pct,
-      duration: 1100,
-      delay: 400,
-      easing: Easing.out(Easing.cubic),
-      useNativeDriver: false,
-    }).start();
-    const t = setTimeout(() => say(`${greeting()}! Ready to study?`), 700);
-    return () => clearTimeout(t);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [data]);
 
   const handleOpenCourse = async (subjectId: string) => {
     setActiveSubjectId(subjectId);
     setLoadingSubject(true);
     const res = await studentApi.getSubjectDetails(token, subjectId);
     setLoadingSubject(false);
+
     if (res.success && res.data) {
       setSubjectDetails(res.data);
       const firstMod = res.data.modules[0];
       if (firstMod) {
         setActiveModuleId(firstMod.id);
         const firstTopic = firstMod.topics[0];
-        if (firstTopic) setActiveTopicId(firstTopic.id);
+        if (firstTopic) {
+          setActiveTopicId(firstTopic.id);
+        }
       }
-      setWorkspaceTab('text');
     } else {
-      Alert.alert('Course unavailable', res.message || 'Could not load this course.');
+      Alert.alert('Course Unavailable', res.message || 'Could not load course curriculum.');
       setActiveSubjectId(null);
     }
   };
@@ -640,51 +127,32 @@ export default function DashboardScreen() {
   const reloadSubjectDetails = async () => {
     if (!activeSubjectId) return;
     const res = await studentApi.getSubjectDetails(token, activeSubjectId);
-    if (res.success && res.data) setSubjectDetails(res.data);
+    if (res.success && res.data) {
+      setSubjectDetails(res.data);
+    }
   };
 
-  const activeModule =
-    subjectDetails?.modules.find((m) => m.id === activeModuleId) || subjectDetails?.modules[0] || null;
-  const activeTopic =
-    activeModule?.topics.find((t) => t.id === activeTopicId) || activeModule?.topics[0] || null;
-
-  // Reset reading progress whenever the learner switches topic or tab
-  useEffect(() => {
-    viewport.current = { ...viewport.current, y: 0 };
-    userScrolled.current = false;
-    reachedEnd.current = false;
-    readAnim.setValue(0);
-    setReadPct(0);
-    scrollRef.current?.scrollTo({ y: 0, animated: false });
-    const t = setTimeout(recalcRead, 60);
-    return () => clearTimeout(t);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeTopic?.id, workspaceTab]);
-
-  // Small celebration the first time they reach the end of a document
-  useEffect(() => {
-    if (readPct >= 100 && userScrolled.current && !reachedEnd.current && activeTopic) {
-      reachedEnd.current = true;
-      hop();
-      say('You made it to the end!', 2400);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [readPct]);
+  const activeModule = subjectDetails?.modules.find(m => m.id === activeModuleId) || subjectDetails?.modules[0] || null;
+  const activeTopic = activeModule?.topics.find(t => t.id === activeTopicId) || activeModule?.topics[0] || null;
 
   const handleProceedToNextTopic = async () => {
     if (!subjectDetails || !activeTopic) {
       setShowQuizModal(false);
       return;
     }
-    const topics = subjectDetails.modules.flatMap((m) => m.topics);
-    const i = topics.findIndex((t) => t.id === activeTopic.id);
-    const next = i >= 0 ? topics[i + 1] : undefined;
+
+    const topics = subjectDetails.modules.flatMap(module => module.topics);
+    const currentIndex = topics.findIndex(topic => topic.id === activeTopic.id);
+    const nextTopic = currentIndex >= 0 ? topics[currentIndex + 1] : undefined;
+
     setShowQuizModal(false);
-    if (next) {
-      const nextMod = subjectDetails.modules.find((m) => m.topics.some((t) => t.id === next.id));
-      if (nextMod) {
-        setActiveModuleId(nextMod.id);
-        setActiveTopicId(next.id);
+    if (nextTopic) {
+      const nextModule = subjectDetails.modules.find(module =>
+        module.topics.some(topic => topic.id === nextTopic.id)
+      );
+      if (nextModule) {
+        setActiveModuleId(nextModule.id);
+        setActiveTopicId(nextTopic.id);
         setWorkspaceTab('text');
       }
     }
@@ -697,9 +165,6 @@ export default function DashboardScreen() {
     const res = await studentApi.markTopicReviewed(token, activeSubjectId, activeTopic.id);
     if (res.success) {
       await reloadSubjectDetails();
-      hop();
-      setBurst((b) => b + 1);
-      say('Quiz unlocked. You got this!', 3000);
     } else {
       Alert.alert('Error', res.message || 'Could not update review status.');
     }
@@ -707,376 +172,322 @@ export default function DashboardScreen() {
   };
 
   const handleQuizSubmit = async (answers: Record<string, string>) => {
-    if (!activeSubjectId || !activeTopic) return { success: false };
+    if (!activeSubjectId || !activeTopic) {
+      return { success: false };
+    }
     const res = await studentApi.submitQuiz(token, activeSubjectId, activeTopic.id, answers);
     if (res.success) {
       await reloadSubjectDetails();
-      hop();
-      setBurst((b) => b + 1);
     }
     return res;
   };
 
-  const pokeGate = () => {
-    hop();
-    const lines = ['Boop!', 'Almost there.', 'Take your time.', 'Tiny steps count.'];
-    say(lines[pokeIdx.current++ % lines.length], 2000);
-  };
-
-  /* ---------------- loading / error ---------------- */
-  if (!fontsLoaded) return null;
-
   if (authLoading || loading) {
     return (
-      <View style={s.centered}>
-        <Image source={require('@/assets/images/mascot_gif.gif')} style={{ width: 180, height: 180 }} resizeMode="contain" />
-        <Text style={s.centeredTitle}>Packing your books…</Text>
-        <Text style={s.centeredSub}>Getting your courses ready</Text>
+      <View style={styles.centered}>
+        <ActivityIndicator size="large" color={COLORS.primary} />
+        <Text style={styles.loadingText}>Loading your learning dashboard...</Text>
       </View>
     );
   }
 
   if (error) {
     return (
-      <View style={s.centered}>
-        <Image source={require('@/assets/images/mascot.png')} style={{ width: 170, height: 150 }} resizeMode="contain" />
-        <Text style={s.centeredTitle}>Couldn’t load your courses</Text>
-        <Text style={[s.centeredSub, { marginBottom: 20 }]}>{error}</Text>
-        <Btn label="Try again" icon="refresh" onPress={loadDashboard} />
+      <View style={styles.centered}>
+        <Text style={styles.errorTitle}>Unable to Load Dashboard</Text>
+        <Text style={styles.errorText}>{error}</Text>
+        <Pressable onPress={loadDashboard} style={styles.retryButton}>
+          <Text style={styles.retryButtonText}>Try Again</Text>
+        </Pressable>
       </View>
     );
   }
 
-  /* ================================================================ */
-  /*  COURSE VIEWER                                                    */
-  /* ================================================================ */
+  // ════════════════════════════════════════════════════════════════
+  // ─── 1. NETACAD COURSE VIEWER WORKSPACE ─────────────────────────
+  // ════════════════════════════════════════════════════════════════
   if (activeSubjectId && subjectDetails) {
     const hasQuiz = activeTopic?.quiz && (activeTopic.quiz.questions?.length || 0) > 0;
-    const overall = subjectDetails.overallProgressPercent || 0;
-    const tabs: { key: typeof workspaceTab; label: string; icon: keyof typeof Ionicons.glyphMap; reading: string }[] = [
-      { key: 'text', label: 'Read', icon: 'book-outline', reading: 'Reading' },
-      { key: 'presentation', label: 'Slides', icon: 'easel-outline', reading: 'Viewing slides' },
-      { key: 'summary', label: 'Recap', icon: 'sparkles-outline', reading: 'Reading recap' },
-    ];
-    const readingLabel = tabs.find((t) => t.key === workspaceTab)?.reading || 'Reading';
-    const masteryLine = activeTopic?.quizPassed
-      ? 'Passed! The next lesson is open.'
-      : activeTopic?.contentReviewed
-      ? `Review done. Score ${activeTopic.quiz?.passingScorePercent || 75}% or higher on the quiz to move on.`
-      : 'Read the text and slides, then tap “I’ve reviewed this” to unlock the quiz.';
 
     return (
-      <SafeAreaView style={s.safe} edges={['top']}>
-        {/* Top bar */}
-        <View style={[s.topBar, !isDesktop && { flexWrap: 'wrap', gap: 10 }]}>
-          <View style={s.topLeft}>
-            <Chunky
-              face={C.paper}
-              shadow={C.pinkDeep}
-              radius={12}
-              depth={4}
-              onPress={() => {
-                setActiveSubjectId(null);
-                setSubjectDetails(null);
-              }}
-              faceStyle={{ paddingHorizontal: 12, paddingVertical: 8, flexDirection: 'row', alignItems: 'center', gap: 6 }}
-            >
-              <Ionicons name="chevron-back" size={16} color={C.ink} />
-              <Text style={s.smallBtnText}>Courses</Text>
-            </Chunky>
+      <SafeAreaView style={styles.safeArea} edges={['top']}>
+        {/* NetAcad Persistent Top Bar with Progress Tracking */}
+        <View style={styles.netacadTopBar}>
+          <View style={styles.netacadTopLeft}>
+            <Pressable style={styles.backBtn} onPress={() => setActiveSubjectId(null)}>
+              <Text style={styles.backBtnText}>← All Courses</Text>
+            </Pressable>
             {!isDesktop && (
-              <Chunky
-                face={mobileCurriculumOpen ? C.coral : C.cream}
-                shadow={mobileCurriculumOpen ? C.coralDeep : '#E8D77A'}
-                radius={12}
-                depth={4}
-                onPress={() => setMobileCurriculumOpen((p) => !p)}
-                faceStyle={{ paddingHorizontal: 12, paddingVertical: 8, flexDirection: 'row', alignItems: 'center', gap: 6 }}
+              <Pressable
+                style={styles.treeToggleBtn}
+                onPress={() => setMobileCurriculumOpen(prev => !prev)}
               >
-                <Ionicons name={mobileCurriculumOpen ? 'close' : 'list'} size={16} color={C.ink} />
-                <Text style={s.smallBtnText}>{mobileCurriculumOpen ? 'Close' : 'Modules'}</Text>
-              </Chunky>
+                <Text style={styles.treeToggleBtnText}>
+                  {mobileCurriculumOpen ? '✕ Close Tree' : '☰ Modules'}
+                </Text>
+              </Pressable>
             )}
-            <View style={s.codeChip}>
-              <Text style={s.codeChipText}>
-                {subjectDetails.subject?.code || (subjectDetails as any).code || 'COURSE'}
-              </Text>
+            <View style={styles.courseTag}>
+              <Text style={styles.courseTagText}>{subjectDetails.subject?.code || (subjectDetails as any).code || 'COURSE'}</Text>
             </View>
-            <Text style={s.topTitle} numberOfLines={1}>
-              {subjectDetails.subject?.name || (subjectDetails as any).name || 'Course'}
+            <Text style={styles.courseNameTop} numberOfLines={1}>
+              {subjectDetails.subject?.name || (subjectDetails as any).name || 'Course Curriculum'}
             </Text>
           </View>
 
-          <View style={[s.topProgress, !isDesktop && { width: '100%', marginLeft: 0 }]}>
-            <View style={s.trackOuter}>
-              <View style={[s.trackInner, { width: `${overall}%` }]} />
+          {/* Continuous Progress Tracker */}
+          <View style={styles.netacadProgressSection}>
+            <View style={styles.progressLabels}>
+              <Text style={styles.progressTrackerLabel}>COURSE COMPLETION</Text>
+              <Text style={styles.progressTrackerPercent}>{subjectDetails.overallProgressPercent}%</Text>
             </View>
-            <Text style={s.topPct}>{overall}%</Text>
+            <View style={styles.progressTrack}>
+              <View style={[styles.progressFill, { width: `${subjectDetails.overallProgressPercent}%` }]} />
+            </View>
           </View>
         </View>
 
-        <View style={[s.workspace, !isDesktop && { flexDirection: 'column' }]}>
-          {/* Curriculum */}
+        <View style={[styles.netacadWorkspace, !isDesktop && { flexDirection: 'column' }]}>
+          {/* Persistent Left Navigation Menu: Module Hierarchy Tree */}
           {(isDesktop || mobileCurriculumOpen || !activeTopic) && (
-            <View style={[s.sidebar, !isDesktop && { width: '100%', maxHeight: mobileCurriculumOpen ? 360 : '100%' }]}>
-              <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ padding: 14, gap: 12 }}>
-                {subjectDetails.modules.map((mod, mi) => {
-                  const a = ACCENTS[mi % ACCENTS.length];
-                  const isOpen = !collapsed[mod.id];
-                  const doneCount = mod.topics.filter(
-                    (t) => t.quizPassed || (t.contentReviewed && (!t.quiz || t.quiz.questions.length === 0))
-                  ).length;
-                  return (
-                    <View key={mod.id} style={s.modBlock}>
-                      <Pressable
-                        onPress={() => setCollapsed((c) => ({ ...c, [mod.id]: isOpen }))}
-                        style={[s.modHead, { backgroundColor: a.face }]}
-                      >
-                        <View style={s.modNum}>
-                          <Text style={s.modNumText}>{mi + 1}</Text>
-                        </View>
-                        <View style={{ flex: 1 }}>
-                          <Text style={[s.modTitle, { color: a.fg }]} numberOfLines={2}>
-                            {mod.title}
-                          </Text>
-                          <Text style={[s.modCount, { color: a.fg }]}>
-                            {doneCount} of {mod.topics.length} done
-                          </Text>
-                        </View>
-                        <Ionicons name={isOpen ? 'chevron-up' : 'chevron-down'} size={18} color={a.fg} />
-                      </Pressable>
+            <View style={[styles.netacadSidebar, !isDesktop && { width: '100%', maxHeight: mobileCurriculumOpen ? 340 : '100%' }]}>
+              <View style={styles.sidebarHeader}>
+                <Text style={styles.sidebarHeaderTitle}>COURSE CURRICULUM</Text>
+                <Text style={styles.sidebarHeaderSub}>Sequential Mastery Track</Text>
+              </View>
 
-                      {isOpen &&
-                        mod.topics.map((top, ti) => {
-                          const isActive = activeTopic?.id === top.id;
-                          const isLocked = !top.unlocked;
-                          const isDone =
-                            top.quizPassed ||
-                            (top.contentReviewed && (!top.quiz || top.quiz.questions.length === 0));
-                          const first = ti === 0;
-                          const last = ti === mod.topics.length - 1;
-                          return (
-                            <Pressable
-                              key={top.id}
-                              disabled={isLocked}
-                              onPress={() => {
-                                setActiveModuleId(mod.id);
-                                setActiveTopicId(top.id);
-                                setWorkspaceTab('text');
-                                if (!isDesktop) setMobileCurriculumOpen(false);
-                              }}
-                              style={[
-                                s.topicRow,
-                                isActive && s.topicRowActive,
-                                isLocked && { opacity: 0.55 },
-                              ]}
-                            >
-                              <View
-                                pointerEvents="none"
-                                style={[
-                                  s.topicLine,
-                                  first && { top: '50%' },
-                                  last && { bottom: '50%' },
-                                  first && last && { opacity: 0 },
-                                ]}
-                              />
-                              <View
-                                style={[
-                                  s.topicBadge,
-                                  isDone && { backgroundColor: C.green },
-                                  isLocked && { backgroundColor: C.pink },
-                                  isActive && !isDone && !isLocked && { backgroundColor: C.coral },
-                                ]}
-                              >
-                                <Ionicons
-                                  name={isDone ? 'checkmark' : isLocked ? 'lock-closed' : 'play'}
-                                  size={12}
-                                  color={isDone || (isActive && !isLocked) ? '#FFFFFF' : C.ink}
-                                />
-                              </View>
-                              <View style={{ flex: 1 }}>
-                                <Text style={[s.topicTitle, isActive && { fontFamily: F.bold }]} numberOfLines={2}>
-                                  {top.title}
-                                </Text>
-                                <Text style={s.topicMeta}>
-                                  {isDone
-                                    ? top.quizPassed
-                                      ? `Passed with ${top.bestScorePercent}%`
-                                      : 'Completed'
-                                    : isLocked
-                                    ? 'Finish the previous topic first'
-                                    : top.contentReviewed
-                                    ? 'Quiz is ready'
-                                    : 'Not started'}
-                                </Text>
-                              </View>
-                            </Pressable>
-                          );
-                        })}
+              <ScrollView style={styles.sidebarScroll} showsVerticalScrollIndicator={false}>
+                {subjectDetails.modules.map(mod => (
+                  <View key={mod.id} style={styles.moduleBlock}>
+                    <View style={styles.moduleHeaderRow}>
+                      <Text style={styles.moduleTitleText}>{mod.title}</Text>
                     </View>
-                  );
-                })}
-              </ScrollView>
-            </View>
+
+                    <View style={styles.topicsTree}>
+                      {mod.topics.map(top => {
+                        const isActive = activeTopic?.id === top.id;
+                        const isLocked = !top.unlocked;
+                        const isCompleted = top.quizPassed || (top.contentReviewed && (!top.quiz || top.quiz.questions.length === 0));
+
+                        return (
+                          <Pressable
+                            key={top.id}
+                            style={[
+                              styles.topicItem,
+                              isActive && styles.topicItemActive,
+                              isLocked && styles.topicItemLocked,
+                            ]}
+                            disabled={isLocked}
+                            onPress={() => {
+                              setActiveModuleId(mod.id);
+                              setActiveTopicId(top.id);
+                              setWorkspaceTab('text');
+                              if (!isDesktop) setMobileCurriculumOpen(false);
+                            }}
+                          >
+                          <View style={styles.topicStatusIndicator}>
+                            {isCompleted ? (
+                              <View style={styles.indicatorCompleted}>
+                                <Text style={styles.indicatorTextCompleted}>✓</Text>
+                              </View>
+                            ) : isLocked ? (
+                              <View style={styles.indicatorLocked}>
+                                <Text style={styles.indicatorTextLocked}>🔒</Text>
+                              </View>
+                            ) : (
+                              <View style={[styles.indicatorActive, isActive && styles.indicatorCurrent]}>
+                                <Text style={styles.indicatorTextActive}>►</Text>
+                              </View>
+                            )}
+                          </View>
+
+                          <View style={{ flex: 1 }}>
+                            <Text
+                              style={[
+                                styles.topicItemTitle,
+                                isActive && styles.topicItemTitleActive,
+                                isLocked && styles.topicItemTitleLocked,
+                              ]}
+                              numberOfLines={2}
+                            >
+                              {top.title}
+                            </Text>
+                            <Text style={styles.topicMetaSub}>
+                              {isCompleted
+                                ? (top.quizPassed ? `Passed (${top.bestScorePercent}%)` : 'Completed')
+                                : isLocked
+                                ? 'Prerequisite Required'
+                                : (top.contentReviewed ? 'Quiz Ready' : 'In Progress')}
+                            </Text>
+                          </View>
+                        </Pressable>
+                      );
+                    })}
+                  </View>
+                </View>
+              ))}
+            </ScrollView>
+          </View>
           )}
 
-          {/* Main */}
-          <View style={{ flex: 1 }}>
+          {/* Central Dominant Workspace */}
+          <View style={styles.netacadMainViewport}>
             {activeTopic ? (
-              <>
-                <ReadBar anim={readAnim} pct={readPct} label={readingLabel} />
+              <ScrollView style={styles.contentScroll} contentContainerStyle={styles.contentScrollBody}>
+                                {subjectDetails.streak && (
+                  <StreakBadge
+                    current={subjectDetails.streak.current}
+                    target={subjectDetails.streak.target}
+                    unlocked={subjectDetails.streak.unlocked}
+                  />
+                )}
+                
+                {/* Topic Header Card */}
+                <View style={styles.topicHeroCard}>
+                  <View style={styles.topicHeroMeta}>
+                    <Text style={styles.activeModuleBreadcrumb}>{activeModule?.title}</Text>
+                    <Text style={styles.activeTopicTitle}>{activeTopic.title}</Text>
+                  </View>
 
-                <ScrollView
-                  ref={scrollRef}
-                  contentContainerStyle={s.mainBody}
-                  showsVerticalScrollIndicator={false}
-                  scrollEventThrottle={16}
-                  onScroll={onMainScroll}
-                  onLayout={(e) => {
-                    viewport.current = { ...viewport.current, h: e.nativeEvent.layout.height };
-                    recalcRead();
-                  }}
-                >
-                  {/* Document */}
-                  <View
-                    style={s.contentCard}
-                    onLayout={(e) => {
-                      docBox.current = { y: e.nativeEvent.layout.y, h: e.nativeEvent.layout.height };
-                      recalcRead();
-                    }}
-                  >
-                    {workspaceTab === 'text' &&
-                      (activeTopic.content?.richText ? (
-                        <Text style={s.prose}>{activeTopic.content.richText.replace(/<[^>]+>/g, '')}</Text>
-                      ) : (
-                        <Empty icon="document-text-outline" text="No reading for this topic yet." />
-                      ))}
+                  {/* Tabs: Text Prose, Presentation (AWS S3), Summary */}
+                  <View style={styles.topicTabRow}>
+                    <Pressable
+                      style={[styles.topicTabBtn, workspaceTab === 'text' && styles.topicTabBtnActive]}
+                      onPress={() => setWorkspaceTab('text')}
+                    >
+                      <Text style={[styles.topicTabText, workspaceTab === 'text' && styles.topicTabTextActive]}>
+                        Instructional Text
+                      </Text>
+                    </Pressable>
+                    <Pressable
+                      style={[styles.topicTabBtn, workspaceTab === 'presentation' && styles.topicTabBtnActive]}
+                      onPress={() => setWorkspaceTab('presentation')}
+                    >
+                      <Text style={[styles.topicTabText, workspaceTab === 'presentation' && styles.topicTabTextActive]}>
+                        Presentation (AWS S3)
+                      </Text>
+                    </Pressable>
+                    <Pressable
+                      style={[styles.topicTabBtn, workspaceTab === 'summary' && styles.topicTabBtnActive]}
+                      onPress={() => setWorkspaceTab('summary')}
+                    >
+                      <Text style={[styles.topicTabText, workspaceTab === 'summary' && styles.topicTabTextActive]}>
+                        Summary & Takeaways
+                      </Text>
+                    </Pressable>
+                  </View>
+                </View>
 
-                    {workspaceTab === 'presentation' &&
-                      (activeTopic.content?.presentationUrl ? (
-                        <PresentationViewer
-                          url={activeTopic.content.presentationUrl}
-                          fileName={activeTopic.content.presentationFileName || `${activeTopic.title}.pptx`}
-                          fileSize={activeTopic.content.presentationFileSize}
-                          s3Key={activeTopic.content.presentationS3Key}
-                          minHeight={680}
-                        />
-                      ) : (
-                        <Empty icon="easel-outline" text="No slide deck attached to this topic." />
-                      ))}
-
-                    {workspaceTab === 'summary' && (
-                      <>
-                        {activeTopic.content?.summaryText ? (
-                          <View style={{ marginBottom: 18 }}>
-                            <Text style={s.blockTitle}>The short version</Text>
-                            <Text style={s.prose}>{activeTopic.content.summaryText}</Text>
-                          </View>
-                        ) : null}
-                        {activeTopic.content?.summaryBullets?.length ? (
-                          <View>
-                            <Text style={s.blockTitle}>Remember these</Text>
-                            {activeTopic.content.summaryBullets.map((b, i) => (
-                              <View key={i} style={[s.bulletRow, { transform: [{ rotate: i % 2 ? '0.4deg' : '-0.4deg' }] }]}>
-                                <View style={[s.bulletBadge, { backgroundColor: ACCENTS[i % ACCENTS.length].face }]}>
-                                  <Text style={s.bulletNum}>{i + 1}</Text>
-                                </View>
-                                <Text style={s.bulletText}>{b}</Text>
-                              </View>
-                            ))}
-                          </View>
-                        ) : null}
-                        {!activeTopic.content?.summaryText && !activeTopic.content?.summaryBullets?.length && (
-                          <Empty icon="sparkles-outline" text="No recap for this topic yet." />
-                        )}
-                      </>
+                {/* TAB 1: INSTRUCTIONAL TEXT CONTENT */}
+                {workspaceTab === 'text' && (
+                  <View style={styles.contentBodyCard}>
+                    {activeTopic.content?.richText ? (
+                      <Text style={styles.proseContent}>
+                        {activeTopic.content.richText.replace(/<[^>]+>/g, '')}
+                      </Text>
+                    ) : (
+                      <View style={styles.emptyContentPad}>
+                        <Text style={styles.emptyContentText}>No text prose provided for this topic.</Text>
+                      </View>
                     )}
                   </View>
+                )}
 
-                  {/* Where am I + switch view (now sits under the document) */}
-                  <View style={s.dock}>
-                    <View style={s.dockInfo}>
-                      <View style={s.dockPin}>
-                        <Ionicons name="bookmark" size={16} color={C.ink} />
+                {/* TAB 2: PRESENTATION (AWS S3) */}
+                {workspaceTab === 'presentation' && (
+                  <View style={styles.contentBodyCard}>
+                    {activeTopic.content?.presentationUrl ? (
+                      <PresentationViewer
+                        url={activeTopic.content.presentationUrl}
+                        fileName={activeTopic.content.presentationFileName || `${activeTopic.title}.pptx`}
+                        fileSize={activeTopic.content.presentationFileSize}
+                        s3Key={activeTopic.content.presentationS3Key}
+                        minHeight={600}
+                      />
+                    ) : (
+                      <View style={styles.emptyContentPad}>
+                        <Text style={styles.emptyContentText}>No presentation slide deck attached to this topic.</Text>
                       </View>
-                      <View style={{ flex: 1 }}>
-                        <Text style={s.crumb} numberOfLines={1}>
-                          {activeModule?.title}
-                        </Text>
-                        <Text style={s.dockTitle} numberOfLines={2}>
-                          {activeTopic.title}
-                        </Text>
-                      </View>
-                    </View>
-                    <View style={s.tabRow}>
-                      {tabs.map((t) => (
-                        <Chunky
-                          key={t.key}
-                          held={workspaceTab === t.key}
-                          face={workspaceTab === t.key ? C.blue : C.paper}
-                          shadow={workspaceTab === t.key ? C.blueDeep : C.pinkDeep}
-                          radius={14}
-                          depth={5}
-                          onPress={() => setWorkspaceTab(t.key)}
-                          faceStyle={{ paddingHorizontal: 14, paddingVertical: 9, flexDirection: 'row', alignItems: 'center', gap: 6 }}
-                        >
-                          <Ionicons name={t.icon} size={16} color={workspaceTab === t.key ? '#FFFFFF' : C.ink} />
-                          <Text style={[s.tabText, workspaceTab === t.key && { color: '#FFFFFF' }]}>{t.label}</Text>
-                        </Chunky>
-                      ))}
-                    </View>
+                    )}
                   </View>
+                )}
 
-                  {/* Mastery gate: short, centered */}
-                  <View style={s.gate}>
-                    <Burst trigger={burst} disabled={reduce} />
-                    <Bubble
-                      center
-                      text={bubbleText}
-                      anim={bubbleAnim}
-                      style={{ position: 'absolute', top: -30, alignSelf: 'center', zIndex: 5 }}
-                    />
-                    <Pressable onPress={pokeGate} accessibilityLabel="Mascot">
-                      <Animated.View style={{ transform: [{ translateY: jump }] }}>
-                        <Image source={require('@/assets/images/mascot.png')} style={s.gateMascot} resizeMode="contain" />
-                      </Animated.View>
-                    </Pressable>
-                    <Text style={s.gateTitle}>
-                      {activeTopic.quizPassed ? 'Topic cleared' : activeTopic.contentReviewed ? 'Quiz unlocked' : 'Quiz locked'}
+                {/* TAB 3: SUMMARY & TAKEAWAYS */}
+                {workspaceTab === 'summary' && (
+                  <View style={styles.contentBodyCard}>
+                    {activeTopic.content?.summaryText ? (
+                      <View style={styles.summaryBlock}>
+                        <Text style={styles.summaryTitle}>Topic Executive Summary</Text>
+                        <Text style={styles.summaryParagraph}>{activeTopic.content.summaryText}</Text>
+                      </View>
+                    ) : null}
+
+                    {activeTopic.content?.summaryBullets && activeTopic.content.summaryBullets.length > 0 ? (
+                      <View style={[styles.summaryBlock, { marginTop: 16 }]}>
+                        <Text style={styles.summaryTitle}>Key Takeaway Points</Text>
+                        {activeTopic.content.summaryBullets.map((bullet, idx) => (
+                          <View key={idx} style={styles.bulletItem}>
+                            <View style={styles.bulletDot} />
+                            <Text style={styles.bulletText}>{bullet}</Text>
+                          </View>
+                        ))}
+                      </View>
+                    ) : null}
+
+                    {!activeTopic.content?.summaryText && (!activeTopic.content?.summaryBullets || activeTopic.content.summaryBullets.length === 0) && (
+                      <View style={styles.emptyContentPad}>
+                        <Text style={styles.emptyContentText}>No summary points generated for this topic yet.</Text>
+                      </View>
+                    )}
+                  </View>
+                )}
+
+                {/* ─── MASTERY GATE & ASSESSMENT ACTION BAR ────────── */}
+                <View style={styles.masteryGateCard}>
+                  <View style={styles.masteryStatusInfo}>
+                    <Text style={styles.masteryGateTitle}>TOPIC PROGRESSION & MASTERY LOCK</Text>
+                    <Text style={styles.masteryGateDesc}>
+                      {activeTopic.quizPassed
+                        ? 'Mastery satisfied! You have passed this topic assessment. The next lesson is unlocked.'
+                        : activeTopic.contentReviewed
+                        ? 'Content fully reviewed. The assessment is now unlocked. Score at least ' + (activeTopic.quiz?.passingScorePercent || 75) + '% to proceed.'
+                        : 'Review the text prose and presentation slides, then click "Mark as Reviewed" to unlock the Wayground assessment.'}
                     </Text>
-                    <Text style={s.gateDesc}>{masteryLine}</Text>
-                    <View style={s.gateBtns}>
-                      {!activeTopic.contentReviewed && (
-                        <Btn
-                          label="I’ve reviewed this"
-                          tone="paper"
-                          icon="checkmark-done"
-                          loading={markingReviewed}
-                          onPress={handleMarkReviewed}
-                        />
-                      )}
-                      {hasQuiz && activeTopic.contentReviewed && (
-                        <Btn
-                          label={activeTopic.quizPassed ? 'Quiz passed' : 'Take the quiz'}
-                          tone={activeTopic.quizPassed ? 'green' : 'blue'}
-                          icon={activeTopic.quizPassed ? 'trophy' : 'flash'}
-                          disabled={activeTopic.quizPassed}
-                          onPress={() => setShowQuizModal(true)}
-                        />
-                      )}
-                    </View>
                   </View>
-                </ScrollView>
-              </>
+
+                  <View style={styles.masteryActionButtons}>
+                    {!activeTopic.contentReviewed && (
+                      <Button
+                        title={markingReviewed ? 'Saving Review...' : 'Mark Content as Reviewed'}
+                        variant="secondary"
+                        size="md"
+                        loading={markingReviewed}
+                        onPress={handleMarkReviewed}
+                      />
+                    )}
+
+                    {hasQuiz && activeTopic.contentReviewed && (
+                      <Button
+                        title={activeTopic.quizPassed ? 'Assessment Passed' : 'Take Topic Assessment (Wayground Engine)'}
+                        variant="primary"
+                        size="md"
+                        disabled={activeTopic.quizPassed}
+                        onPress={() => setShowQuizModal(true)}
+                      />
+                    )}
+                  </View>
+                </View>
+              </ScrollView>
             ) : (
-              <View style={s.centered}>
-                <Text style={s.centeredTitle}>Pick a topic</Text>
-                <Text style={s.centeredSub}>Choose an unlocked topic from the list to start.</Text>
+              <View style={styles.noTopicSelected}>
+                <Text style={styles.noTopicTitle}>Select a Topic</Text>
+                <Text style={styles.noTopicSub}>Choose an unlocked topic from the left curriculum tree to begin studying.</Text>
               </View>
             )}
           </View>
         </View>
 
+        {/* Wayground Adaptive Quiz Engine Modal */}
         {activeTopic?.quiz && (
           <WaygroundStudentQuizModal
             visible={showQuizModal}
@@ -1084,7 +495,9 @@ export default function DashboardScreen() {
             topicTitle={activeTopic.title}
             onClose={() => setShowQuizModal(false)}
             onSubmit={handleQuizSubmit}
-            onReviewContent={() => setWorkspaceTab('text')}
+            onReviewContent={() => {
+              setWorkspaceTab('text');
+            }}
             onProceedToNextTopic={handleProceedToNextTopic}
           />
         )}
@@ -1092,414 +505,931 @@ export default function DashboardScreen() {
     );
   }
 
-  /* ================================================================ */
-  /*  DASHBOARD HOME                                                   */
-  /* ================================================================ */
-  const subjects = (academics?.enrolledSubjects ?? []).filter(Boolean);
-  const initials = (profile?.firstName?.[0] ?? '') + (profile?.lastName?.[0] ?? '');
-  const pokeLines = ['Boop!', 'Tap a course to dive in.', 'Snacks first, then study.', 'I believe in you.'];
-  const pokeMascot = () => {
-    hop();
-    say(pokeLines[pokeIdx.current++ % pokeLines.length]);
-  };
-
-  const meta = [
-    { icon: 'id-card-outline' as const, label: 'Student ID', text: profile?.studentId, c: C.cream },
-    { icon: 'school-outline' as const, label: 'Year level', text: user?.yearLevel, c: C.pink },
-    { icon: 'calendar-outline' as const, label: 'Semester', text: academics?.semester, c: C.cream },
-    { icon: 'time-outline' as const, label: 'School year', text: academics?.academicYear ? `SY ${academics.academicYear}` : null, c: C.pink },
-  ].filter((m) => m.text);
+  // ════════════════════════════════════════════════════════════════
+  // ─── 2. DEFAULT STUDENT LEARNING DASHBOARD ──────────────────────
+  // ════════════════════════════════════════════════════════════════
+  const profile = data?.profile;
+  const academics = data?.academics;
 
   return (
-    <SafeAreaView style={s.safe} edges={['top']}>
-      <ScrollView contentContainerStyle={s.scroll} showsVerticalScrollIndicator={false}>
-        <View pointerEvents="none" style={s.blobCoral} />
-        <View pointerEvents="none" style={s.blobBlue} />
-
-        <View style={s.container}>
-          {/* ROW 1: hello card (left) + progress trail (right) */}
-          <View style={[s.heroRow, isDesktop && { flexDirection: 'row' }]}>
-            <View style={[{ flexGrow: 1 }, isDesktop && { flex: 1.6 }]}>
-              <Pressable onPress={pokeMascot} style={s.mascotWrap} accessibilityLabel="Mascot">
-                <Animated.Image
-                  source={require('@/assets/images/mascot.png')}
-                  resizeMode="contain"
-                  style={{
-                    width: 170,
-                    height: 150,
-                    transform: [
-                      { translateY: Animated.add(jump, bob.interpolate({ inputRange: [0, 1], outputRange: [0, -6] })) },
-                      { rotate: bob.interpolate({ inputRange: [0, 1], outputRange: ['-2deg', '2deg'] }) },
-                    ],
-                  }}
-                />
-              </Pressable>
-              <Bubble text={bubbleText} anim={bubbleAnim} style={{ position: 'absolute', top: -60, right: 170, zIndex: 5 }} />
-
-              <View style={[s.helloWrap, { flexGrow: 1 }]}>
-                <View style={s.helloShadow} />
-                <View style={[s.hello, { flexGrow: 1, justifyContent: 'space-between', gap: 26 }]}>
-                  <View style={s.helloTop}>
-                    <View style={s.avatarBig}>
-                      <Text style={s.avatarBigText}>{initials}</Text>
-                    </View>
-                    <View style={{ flex: 1 }}>
-                      <Text style={s.helloSmall}>{greeting()},</Text>
-                      <Text style={[s.helloName, isDesktop && { fontSize: 44, lineHeight: 48 }]} numberOfLines={2}>
-                        {profile?.firstName} {profile?.lastName}
-                      </Text>
-                    </View>
-                  </View>
-
-                  <View style={s.infoGrid}>
-                    {meta.map((m, i) => (
-                      <View
-                        key={m.label}
-                        style={[s.infoTile, { backgroundColor: m.c, transform: [{ rotate: i % 2 ? '1.2deg' : '-1.2deg' }] }]}
-                      >
-                        <View style={s.infoIcon}>
-                          <Ionicons name={m.icon} size={15} color={C.ink} />
-                        </View>
-                        <Text style={s.infoLabel}>{m.label}</Text>
-                        <Text style={s.infoValue} numberOfLines={1}>
-                          {m.text}
-                        </Text>
-                      </View>
-                    ))}
-                  </View>
-                </View>
-              </View>
-            </View>
-
-            <View style={[s.window, isDesktop && { flex: 1 }]}>
-              <View style={s.windowBar}>
-                <View style={s.dot} />
-                <View style={s.dot} />
-                <View style={s.dot} />
-                <Text style={s.windowTitle}>Progress trail</Text>
-              </View>
-              <View style={{ padding: 20, flexGrow: 1 }}>
-                <Text style={s.trailBig}>
-                  {academics?.completedSubjects ?? 0}
-                  <Text style={s.trailBigSub}> of {academics?.totalSubjects ?? 0} subjects done</Text>
-                </Text>
-
-                <View style={s.trailTrackWrap}>
-                  <View style={s.trailTrack}>
-                    <Animated.View
-                      style={[s.trailFill, { width: progressAnim.interpolate({ inputRange: [0, 100], outputRange: ['0%', '100%'] }) }]}
-                    />
-                  </View>
-                  <Animated.View
-                    pointerEvents="none"
-                    style={[s.trailMarker, { left: progressAnim.interpolate({ inputRange: [0, 100], outputRange: ['0%', '100%'] }) }]}
-                  >
-                    <Image source={require('@/assets/images/mascot.png')} style={{ width: 52, height: 46 }} resizeMode="contain" />
-                  </Animated.View>
-                </View>
-
-                <View style={s.trailEnds}>
-                  <Text style={s.trailEndText}>Start</Text>
-                  <Text style={s.trailEndText}>{pct}%</Text>
-                  <Text style={s.trailEndText}>Finish</Text>
-                </View>
-
-                <View style={s.notice}>
-                  <Ionicons name="bulb-outline" size={20} color={C.ink} />
-                  <Text style={s.noticeText}>
-                    {pct === 100
-                      ? 'Every subject is done. Time to celebrate.'
-                      : subjects.length
-                      ? 'Open a course and clear one topic today.'
-                      : 'Your progress will build up here.'}
-                  </Text>
-                </View>
-              </View>
-            </View>
-          </View>
-
-          {/* ROW 2: four stat stickers, each a different shape */}
-          <View style={s.statRow}>
-            <StatSticker
-              label="GPA"
-              icon="ribbon"
-              accent={ACCENTS[2]}
-              rot={-2}
-              radius={32}
-              delay={0}
-              onTap={() => say(academics?.gpa ? 'Look at those grades!' : 'GPA shows up after grading.')}
-            >
-              {academics?.gpa != null ? (
-                <CountUp to={academics.gpa} decimals={2} style={[s.statValue, { color: C.ink }]} />
-              ) : (
-                <Text style={[s.statValue, { color: C.ink }]}>—</Text>
-              )}
-            </StatSticker>
-            <StatSticker
-              label="Enrolled"
-              icon="library"
-              accent={ACCENTS[0]}
-              rot={1.5}
-              radius={10}
-              delay={90}
-              onTap={() => say(`${academics?.totalSubjects ?? 0} subjects this term.`)}
-            >
-              <CountUp to={academics?.totalSubjects ?? 0} style={[s.statValue, { color: '#FFFFFF' }]} />
-            </StatSticker>
-            <StatSticker
-              label="Completed"
-              icon="checkmark-done"
-              accent={ACCENTS[3]}
-              rot={-1.5}
-              radius={26}
-              delay={180}
-              onTap={() => say(pct === 100 ? 'All done. Wow!' : `${pct}% of the way there.`)}
-            >
-              <CountUp to={academics?.completedSubjects ?? 0} style={[s.statValue, { color: C.ink }]} />
-            </StatSticker>
-            <StatSticker
-              label="Standing"
-              icon="shield-checkmark"
-              accent={ACCENTS[1]}
-              rot={2}
-              radius={14}
-              delay={270}
-              onTap={() => say('Keep it up!')}
-            >
-              <Text style={[s.statValue, { color: C.cream, fontSize: 22, lineHeight: 30 }]} numberOfLines={1}>
-                {academics?.standing || '—'}
+    <SafeAreaView style={styles.safeArea} edges={['top']}>
+      <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+        {/* Academic Header Banner */}
+        <View style={styles.headerBanner}>
+          <View style={styles.headerContent}>
+            <View style={styles.avatarContainer}>
+              <Text style={styles.avatarInitials}>
+                {(profile?.firstName?.[0] ?? '') + (profile?.lastName?.[0] ?? '')}
               </Text>
-            </StatSticker>
+            </View>
+            <View style={styles.headerText}>
+              <Text style={styles.greeting}>{timeOfDay ? `Good ${timeOfDay},` : 'Welcome,'}</Text>
+              <Text style={styles.studentName}>{profile?.firstName} {profile?.lastName}</Text>
+              <Text style={styles.studentId}>
+                ID: {profile?.studentId} • {user?.yearLevel || '1st Year'} • {academics?.semester || '1st Semester'} • SY {user?.schoolYear || '2026-2027'}
+              </Text>
+            </View>
           </View>
+          <View style={{ alignItems: 'flex-end', gap: 6 }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+              <Text style={{ fontSize: 9, fontWeight: '800', color: '#94A3B8' }}>LOGGED IN AS:</Text>
+              <View style={{ backgroundColor: '#E8F8F5', paddingHorizontal: 8, paddingVertical: 2, borderRadius: 4 }}>
+                <Text style={{ fontSize: 10, fontWeight: '900', color: '#27AE60' }}>STUDENT</Text>
+              </View>
+            </View>
+            <View style={styles.semesterBadge}>
+              <Text style={styles.semesterText}>{academics?.semester || 'Active Term'}</Text>
+            </View>
+          </View>
+        </View>
 
-          {/* ROW 3: courses (first one is the big one) */}
-          <View style={s.sectionHead}>
-            <Text style={s.h2}>Your courses</Text>
-            <View style={s.countPill}>
-              <Text style={s.countPillText}>{subjects.length}</Text>
+        {/* Stats Row */}
+        <View style={styles.statsContainer}>
+          <StatCard label="GPA" value={academics?.gpa?.toFixed(2) ?? '—'} bgColor="#FEF9E7" />
+          <StatCard label="Enrolled Credits" value={academics?.totalCredits ?? 0} bgColor="#EBF5FB" />
+          <StatCard label="Completed Credits" value={academics?.completedCredits ?? 0} bgColor="#EAFAF1" />
+          <StatCard label="Total Subjects" value={academics?.totalSubjects ?? 0} bgColor="#FDEDEC" />
+        </View>
+
+        {/* Currently Enrolled Courses */}
+        <View style={styles.section}>
+          <View style={styles.sectionHeader}>
+            <Text style={styles.sectionTitle}>Currently Enrolled Subjects</Text>
+            <View style={styles.countBadge}>
+              <Text style={styles.countBadgeText}>{academics?.totalSubjects || 0} Courses</Text>
             </View>
           </View>
 
           {loadingSubject && (
-            <View style={s.loadingRow}>
-              <ActivityIndicator color={C.coral} />
-              <Text style={s.loadingRowText}>Opening your course…</Text>
+            <View style={styles.centerPad}>
+              <ActivityIndicator size="small" color={COLORS.primary} />
+              <Text style={styles.loadingCourseText}>Opening course curriculum workspace...</Text>
             </View>
           )}
 
-          {subjects.length > 0 ? (
-            <View style={s.grid}>
-              {subjects.map((subject, i) => (
-                <FolderCard
-                  key={subject.code || subject.id || `subject-${i}`}
-                  code={subject.code}
-                  title={subject.title}
-                  instructor={subject.instructor}
-                  schedule={subject.schedule}
-                  accent={ACCENTS[i % ACCENTS.length]}
-                  tilt={i % 2 ? 0.4 : -0.4}
-                  featured={i === 0 && subjects.length > 1}
-                  width={isDesktop && i !== 0 ? '48.5%' : '100%'}
+          {academics?.enrolledSubjects && academics.enrolledSubjects.length > 0 ? (
+            academics.enrolledSubjects.filter(Boolean).map((subject, index) => (
+              <View key={subject.code || subject.id || `enrolled-subject-${index}`} style={styles.courseEnrollCard}>
+                <View style={styles.courseEnrollLeft}>
+                  <View style={styles.codePill}>
+                    <Text style={styles.codePillText}>{subject.code || 'SUBJ'}</Text>
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.courseEnrollTitle}>{subject.title || 'Untitled Subject'}</Text>
+                    <Text style={styles.courseEnrollMeta}>
+                      Instructor: {subject.instructor || 'Faculty'} • {subject.schedule || 'Institutional Track'}
+                    </Text>
+                  </View>
+                </View>
+
+                <Button
+                  title="Open Course Track"
+                  variant="primary"
+                  size="sm"
                   onPress={() => handleOpenCourse(subject.id || subject.code)}
                 />
-              ))}
-            </View>
+              </View>
+            ))
           ) : (
-            <View style={s.emptyBox}>
-              <Image source={require('@/assets/images/mascot.png')} style={{ width: 120, height: 100 }} resizeMode="contain" />
-              <Text style={s.emptyTitle}>No courses yet</Text>
-              <Text style={s.emptyText}>Ask your program chair to enroll you and your subjects will appear here.</Text>
+            <View style={styles.emptyCard}>
+              <Text style={styles.emptyTitle}>No Enrolled Courses</Text>
+              <Text style={styles.emptySub}>
+                You are not currently enrolled in any subjects. Contact your Program Chair for enrollment assignment.
+              </Text>
             </View>
           )}
+        </View>
+
+        {/* Academic Degree Progress Card */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Academic Overview</Text>
+          <View style={styles.overviewCard}>
+            <View style={styles.overviewRow}>
+              <View style={styles.overviewItem}>
+                <Text style={styles.overviewLabel}>Academic Year</Text>
+                <Text style={styles.overviewValue}>{academics?.academicYear || '2026-2027'}</Text>
+              </View>
+              <View style={styles.overviewDivider} />
+              <View style={styles.overviewItem}>
+                <Text style={styles.overviewLabel}>Standing</Text>
+                <Text style={[styles.overviewValue, styles.standingGood]}>{academics?.standing || 'Good Standing'}</Text>
+              </View>
+            </View>
+            <View style={styles.progressSection}>
+              <View style={styles.progressHeader}>
+                <Text style={styles.progressLabel}>Degree Credit Progress</Text>
+                <Text style={styles.progressPercent}>
+                  {Math.round(((academics?.completedCredits ?? 0) / 120) * 100)}%
+                </Text>
+              </View>
+              <View style={styles.progressTrackBar}>
+                <View
+                  style={[
+                    styles.progressTrackFill,
+                    { width: `${Math.min(Math.round(((academics?.completedCredits ?? 0) / 120) * 100), 100)}%` as any },
+                  ]}
+                />
+              </View>
+              <Text style={styles.progressNote}>{academics?.completedCredits ?? 0} / 120 total credits completed</Text>
+            </View>
+          </View>
+        </View>
+
+        {/* Student Personal Info */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Student Profile & Cohort Information</Text>
+          <View style={styles.infoCard}>
+            {[
+              { label: 'Full Name', value: profile?.fullName || `${profile?.firstName} ${profile?.lastName}` },
+              { label: 'Institutional Email', value: profile?.email },
+              { label: 'Username', value: `@${profile?.username}` },
+              { label: 'Student Identification ID', value: profile?.studentId },
+              { label: 'Year Level & Semester', value: `${user?.yearLevel || '1st Year'} • ${user?.activeSemester || '1st Semester'}` },
+              { label: 'School Year', value: user?.schoolYear || '2026-2027' },
+            ].map((item, i) => (
+              <View key={i} style={[styles.infoRow, i > 0 && styles.infoRowBorder]}>
+                <View style={styles.infoContent}>
+                  <Text style={styles.infoLabel}>{item.label}</Text>
+                  <Text style={styles.infoValue}>{item.value}</Text>
+                </View>
+              </View>
+            ))}
+          </View>
         </View>
       </ScrollView>
     </SafeAreaView>
   );
 }
 
-function Empty({ icon, text }: { icon: keyof typeof Ionicons.glyphMap; text: string }) {
-  return (
-    <View style={{ alignItems: 'center', padding: 30 }}>
-      <View style={s.emptyIcon}>
-        <Ionicons name={icon} size={26} color={C.ink} />
-      </View>
-      <Text style={s.emptyText}>{text}</Text>
-    </View>
-  );
-}
-
-/* ------------------------------------------------------------------ */
-/*  Styles                                                             */
-/* ------------------------------------------------------------------ */
-const s = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: C.bg },
-  scroll: { paddingBottom: 60 },
-  container: { width: '100%', maxWidth: 1100, alignSelf: 'center', paddingHorizontal: 20, paddingTop: 12 },
-  centered: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: C.bg, padding: 32 },
-  centeredTitle: { fontFamily: F.display, fontSize: 26, color: C.ink, textAlign: 'center' },
-  centeredSub: { fontFamily: F.medium, fontSize: 15, color: C.muted, marginTop: 6, textAlign: 'center' },
-
-  blobCoral: { position: 'absolute', width: 300, height: 300, borderRadius: 999, top: -120, right: -110, backgroundColor: C.coral },
-  blobBlue: { position: 'absolute', width: 200, height: 200, borderRadius: 999, top: 420, left: -110, backgroundColor: C.blue, opacity: 0.9 },
-
-  // bubble
-  bubble: {
-    maxWidth: 240,
-    backgroundColor: '#FFFFFF',
-    borderWidth: 2.5,
-    borderColor: C.ink,
-    borderRadius: 18,
-    paddingHorizontal: 14,
-    paddingVertical: 9,
+const styles = StyleSheet.create({
+  safeArea: {
+    flex: 1,
+    backgroundColor: '#F8F9FA',
   },
-  bubbleText: { fontFamily: F.medium, fontSize: 14, color: C.ink },
-  bubbleTail: {
-    position: 'absolute',
-    bottom: -8,
-    left: 20,
-    width: 12,
-    height: 12,
+  centered: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#F8F9FA',
+    padding: 32,
+  },
+  loadingText: {
+    marginTop: 10,
+    fontSize: 13,
+    color: '#64748B',
+    fontWeight: '600',
+  },
+  errorTitle: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: '#1A252F',
+    marginBottom: 6,
+  },
+  errorText: {
+    fontSize: 13,
+    color: '#64748B',
+    textAlign: 'center',
+    marginBottom: 16,
+  },
+  retryButton: {
+    backgroundColor: '#C0392B',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 6,
+  },
+  retryButtonText: {
+    color: '#FFFFFF',
+    fontWeight: '700',
+    fontSize: 12,
+  },
+  scrollView: {
+    flex: 1,
+  },
+  scrollContent: {
+    padding: 24,
+    maxWidth: 1200,
+    alignSelf: 'center',
+    width: '100%',
+  },
+  headerBanner: {
     backgroundColor: '#FFFFFF',
-    borderRightWidth: 2.5,
-    borderBottomWidth: 2.5,
-    borderColor: C.ink,
-    transform: [{ rotate: '45deg' }],
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    borderRadius: 8,
+    padding: 20,
+    marginBottom: 20,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  headerContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 16,
+    flex: 1,
+  },
+  avatarContainer: {
+    width: 48,
+    height: 48,
+    borderRadius: 8,
+    backgroundColor: '#C0392B',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  avatarInitials: {
+    color: '#FFFFFF',
+    fontSize: 18,
+    fontWeight: '800',
+  },
+  headerText: {
+    flex: 1,
+  },
+  greeting: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#64748B',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  studentName: {
+    fontSize: 20,
+    fontWeight: '800',
+    color: '#1A252F',
+    letterSpacing: -0.3,
+  },
+  studentId: {
+    fontSize: 12,
+    color: '#94A3B8',
+    marginTop: 2,
+  },
+  semesterBadge: {
+    backgroundColor: '#FDEDEC',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: '#FADBD8',
+  },
+  semesterText: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#C0392B',
+  },
+  statsContainer: {
+    flexDirection: 'row',
+    gap: 12,
+    marginBottom: 24,
+    flexWrap: 'wrap',
+  },
+  statCard: {
+    flex: 1,
+    minWidth: 140,
+    borderRadius: 8,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  statValue: {
+    fontSize: 22,
+    fontWeight: '800',
+    color: '#1A252F',
+  },
+  statLabel: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#64748B',
+    marginTop: 2,
+    textTransform: 'uppercase',
+  },
+  section: {
+    marginBottom: 24,
+  },
+  sectionHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 14,
+  },
+  sectionTitle: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: '#1A252F',
+  },
+  countBadge: {
+    backgroundColor: '#F1F5F9',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 6,
+  },
+  countBadgeText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#475569',
+  },
+  courseEnrollCard: {
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    borderRadius: 8,
+    padding: 16,
+    marginBottom: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  courseEnrollLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 14,
+    flex: 1,
+    marginRight: 16,
+  },
+  codePill: {
+    backgroundColor: '#FDEDEC',
+    borderWidth: 1,
+    borderColor: '#FADBD8',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 6,
+  },
+  codePillText: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: '#C0392B',
+  },
+  courseEnrollTitle: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#1A252F',
+  },
+  courseEnrollMeta: {
+    fontSize: 12,
+    color: '#64748B',
+    marginTop: 2,
+  },
+  emptyCard: {
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    borderRadius: 8,
+    padding: 30,
+    alignItems: 'center',
+  },
+  emptyTitle: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#1A252F',
+  },
+  emptySub: {
+    fontSize: 12,
+    color: '#64748B',
+    marginTop: 4,
+    textAlign: 'center',
+  },
+  centerPad: {
+    padding: 20,
+    alignItems: 'center',
+  },
+  loadingCourseText: {
+    fontSize: 12,
+    color: '#64748B',
+    marginTop: 8,
+  },
+  overviewCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    padding: 20,
+  },
+  overviewRow: {
+    flexDirection: 'row',
+    marginBottom: 16,
+  },
+  overviewItem: {
+    flex: 1,
+  },
+  overviewLabel: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#64748B',
+    textTransform: 'uppercase',
+  },
+  overviewValue: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#1A252F',
+    marginTop: 4,
+  },
+  standingGood: {
+    color: '#27AE60',
+  },
+  overviewDivider: {
+    width: 1,
+    backgroundColor: '#E2E8F0',
+    marginHorizontal: 16,
+  },
+  progressSection: {
+    borderTopWidth: 1,
+    borderTopColor: '#E2E8F0',
+    paddingTop: 16,
+  },
+  progressHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 6,
+  },
+  progressLabel: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#475569',
+  },
+  progressPercent: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: '#C0392B',
+  },
+  progressTrackBar: {
+    height: 8,
+    backgroundColor: '#F1F5F9',
+    borderRadius: 4,
+    overflow: 'hidden',
+    marginBottom: 6,
+  },
+  progressTrackFill: {
+    height: '100%',
+    backgroundColor: '#C0392B',
+  },
+  progressNote: {
+    fontSize: 11,
+    color: '#94A3B8',
+  },
+  infoCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    overflow: 'hidden',
+  },
+  infoRow: {
+    paddingHorizontal: 20,
+    paddingVertical: 14,
+  },
+  infoRowBorder: {
+    borderTopWidth: 1,
+    borderTopColor: '#F1F5F9',
+  },
+  infoContent: {},
+  infoLabel: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#64748B',
+    textTransform: 'uppercase',
+  },
+  infoValue: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#1A252F',
+    marginTop: 3,
   },
 
-  // buttons
-  btnFace: { paddingHorizontal: 20, height: 48, alignItems: 'center', justifyContent: 'center' },
-  btnText: { fontFamily: F.display, fontSize: 16, letterSpacing: 0.3 },
-  smallBtnText: { fontFamily: F.bold, fontSize: 13, color: C.ink },
-
-  // hello card
-  heroRow: { marginTop: 84, gap: 28 },
-  grid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', rowGap: 24 },
-  infoLine: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  mascotWrap: { position: 'absolute', top: -92, right: 26, zIndex: 1 },
-  helloWrap: { zIndex: 2 },
-  helloShadow: { position: 'absolute', top: 9, left: 9, right: -9, bottom: -9, borderRadius: 28, backgroundColor: C.coral },
-  hello: { backgroundColor: C.paper, borderRadius: 28, borderWidth: 3, borderColor: C.ink, padding: 22 },
-  helloTop: { flexDirection: 'row', alignItems: 'center', gap: 16 },
-  helloSmall: { fontFamily: F.medium, fontSize: 15, color: C.muted },
-  helloName: { fontFamily: F.display, fontSize: 30, lineHeight: 34, color: C.ink },
-
-  avatarBig: { width: 100, height: 100, borderRadius: 50, backgroundColor: C.coral, borderWidth: 3, borderColor: C.ink, alignItems: 'center', justifyContent: 'center' },
-  avatarBigText: { fontFamily: F.display, fontSize: 40, color: C.cream },
-  infoGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 12 },
-  infoTile: { flexGrow: 1, flexBasis: 120, borderWidth: 2.5, borderColor: C.ink, borderRadius: 18, padding: 12 },
-  infoIcon: { width: 28, height: 28, borderRadius: 14, backgroundColor: C.paper, borderWidth: 2, borderColor: C.ink, alignItems: 'center', justifyContent: 'center', marginBottom: 8 },
-  infoLabel: { fontFamily: F.medium, fontSize: 12, color: C.muted },
-  infoValue: { fontFamily: F.bold, fontSize: 16, color: C.ink, marginTop: 1 },
-
-  // folders
-  folderShadow: { position: 'absolute', left: 0, right: 0, borderRadius: 20, borderWidth: 2.5, borderColor: C.ink },
-  folderTab: { alignSelf: 'flex-start', flexDirection: 'row', alignItems: 'center', gap: 7, minWidth: 120, maxWidth: '70%', height: 38, paddingHorizontal: 14, borderWidth: 2.5, borderBottomWidth: 0, borderColor: C.ink, borderTopLeftRadius: 16, borderTopRightRadius: 16, marginBottom: -2.5, zIndex: 3 },
-  folderTabText: { fontFamily: F.display, fontSize: 14, flexShrink: 1 },
-  folderBody: { borderWidth: 2.5, borderColor: C.ink, borderTopLeftRadius: 0, borderTopRightRadius: 20, borderBottomLeftRadius: 20, borderBottomRightRadius: 20, padding: 14, zIndex: 2 },
-  folderSheet: { position: 'absolute', top: 6, left: 140, right: 22, height: 40, backgroundColor: '#FFFFFF', borderWidth: 2.5, borderColor: C.ink, borderTopLeftRadius: 10, borderTopRightRadius: 10, paddingHorizontal: 12, paddingTop: 7, gap: 4, zIndex: 1 },
-  sheetLine: { height: 3, width: '85%', borderRadius: 2, backgroundColor: C.pink },
-  folderLabel: { flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: C.paper, borderWidth: 2.5, borderColor: C.ink, borderRadius: 14, padding: 14 },
-  featBadge: { position: 'absolute', top: -2, right: 24, zIndex: 4, flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: C.yellow, borderWidth: 2.5, borderColor: C.ink, borderRadius: 999, paddingHorizontal: 12, paddingVertical: 4, transform: [{ rotate: '5deg' }] },
-  featBadgeText: { fontFamily: F.bold, fontSize: 12, color: C.ink },
-
-  // stats
-  statRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 16, marginTop: 36, marginBottom: 40 },
-  statIcon: { width: 28, height: 28, borderRadius: 14, backgroundColor: C.paper, borderWidth: 2, borderColor: C.ink, alignItems: 'center', justifyContent: 'center', marginBottom: 8 },
-  statValue: { fontFamily: F.display, fontSize: 36, lineHeight: 40 },
-  statLabel: { fontFamily: F.bold, fontSize: 14, marginTop: 2 },
-
-  // sections
-  sectionHead: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 16 },
-  h2: { fontFamily: F.display, fontSize: 28, lineHeight: 32, color: C.ink },
-  countPill: { backgroundColor: C.blue, borderWidth: 2.5, borderColor: C.ink, borderRadius: 999, minWidth: 34, height: 30, paddingHorizontal: 10, alignItems: 'center', justifyContent: 'center' },
-  countPillText: { fontFamily: F.bold, fontSize: 14, color: '#FFFFFF' },
-  loadingRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 10 },
-  loadingRowText: { fontFamily: F.medium, fontSize: 14, color: C.muted },
-
-  // course cards
-  courseTitle: { fontFamily: F.bold, fontSize: 18, lineHeight: 24, color: C.ink },
-  courseMeta: { fontFamily: F.medium, fontSize: 13, color: C.muted, marginTop: 3 },
-  courseGo: { width: 44, height: 44, borderRadius: 22, backgroundColor: C.yellow, borderWidth: 2.5, borderColor: C.ink, alignSelf: 'center', alignItems: 'center', justifyContent: 'center', marginRight: 14 },
-  emptyBox: { alignItems: 'center', backgroundColor: C.paper, borderWidth: 3, borderColor: C.ink, borderStyle: 'dashed', borderRadius: 22, padding: 24 },
-  emptyTitle: { fontFamily: F.display, fontSize: 22, color: C.ink, marginTop: 4 },
-  emptyText: { fontFamily: F.medium, fontSize: 15, lineHeight: 22, color: C.muted, marginTop: 4, textAlign: 'center' },
-  emptyIcon: { width: 54, height: 54, borderRadius: 27, backgroundColor: C.pink, borderWidth: 2.5, borderColor: C.ink, alignItems: 'center', justifyContent: 'center', marginBottom: 10 },
-
-  // trail window
-  window: { backgroundColor: C.paper, borderWidth: 3, borderColor: C.ink, borderRadius: 24, overflow: 'hidden' },
-  windowBar: { height: 44, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, gap: 7, borderBottomWidth: 3, borderBottomColor: C.ink, backgroundColor: C.blue },
-  dot: { width: 11, height: 11, borderRadius: 6, backgroundColor: C.paper, borderWidth: 2, borderColor: C.ink },
-  windowTitle: { fontFamily: F.bold, fontSize: 15, color: '#FFFFFF', marginLeft: 8 },
-  trailBig: { fontFamily: F.display, fontSize: 40, color: C.ink },
-  trailBigSub: { fontFamily: F.medium, fontSize: 15, color: C.muted },
-  trailTrackWrap: { marginTop: 44, marginBottom: 6, marginHorizontal: 24, justifyContent: 'center' },
-  trailTrack: { height: 16, borderRadius: 9, borderWidth: 2.5, borderColor: C.ink, backgroundColor: C.pink, overflow: 'hidden' },
-  trailFill: { height: '100%', backgroundColor: C.coral },
-  trailMarker: { position: 'absolute', top: -38, marginLeft: -26 },
-  trailEnds: { flexDirection: 'row', justifyContent: 'space-between', marginHorizontal: 24, marginTop: 6 },
-  trailEndText: { fontFamily: F.bold, fontSize: 12, color: C.muted },
-  notice: { flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: C.cream, borderRadius: 14, padding: 14, marginTop: 20 },
-  noticeText: { flex: 1, fontFamily: F.medium, fontSize: 14, lineHeight: 20, color: C.ink },
-
-  // course viewer
-  topBar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: C.paper, borderBottomWidth: 3, borderBottomColor: C.ink, paddingHorizontal: 16, paddingVertical: 10 },
-  topLeft: { flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1, flexWrap: 'wrap' },
-  codeChip: { backgroundColor: C.coral, borderWidth: 2, borderColor: C.ink, borderRadius: 10, paddingHorizontal: 9, paddingVertical: 4 },
-  codeChipText: { fontFamily: F.bold, fontSize: 12, color: C.cream },
-  topTitle: { fontFamily: F.bold, fontSize: 16, color: C.ink, flex: 1, minWidth: 120 },
-  topProgress: { width: 230, marginLeft: 14, flexDirection: 'row', alignItems: 'center', gap: 10 },
-  trackOuter: { flex: 1, height: 14, borderRadius: 8, borderWidth: 2.5, borderColor: C.ink, backgroundColor: C.pink, overflow: 'hidden' },
-  trackInner: { height: '100%', backgroundColor: C.blue },
-  topPct: { fontFamily: F.display, fontSize: 16, color: C.ink, width: 52, textAlign: 'right' },
-
-  workspace: { flex: 1, flexDirection: 'row' },
-  sidebar: { width: 300, backgroundColor: C.bg, borderRightWidth: 3, borderRightColor: C.ink },
-  modBlock: { backgroundColor: C.paper, borderWidth: 2.5, borderColor: C.ink, borderRadius: 18, overflow: 'hidden' },
-  modHead: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 14, paddingVertical: 12 },
-  modNum: { width: 28, height: 28, borderRadius: 8, backgroundColor: C.paper, borderWidth: 2, borderColor: C.ink, alignItems: 'center', justifyContent: 'center', transform: [{ rotate: '-6deg' }] },
-  modNumText: { fontFamily: F.display, fontSize: 14, color: C.ink },
-  modTitle: { fontFamily: F.display, fontSize: 15, lineHeight: 19 },
-  modCount: { fontFamily: F.medium, fontSize: 12, marginTop: 2, opacity: 0.85 },
-  topicRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 14, paddingVertical: 11, borderLeftWidth: 5, borderLeftColor: 'transparent', overflow: 'hidden' },
-  topicRowActive: { backgroundColor: C.cream, borderLeftColor: C.coral },
-  topicLine: { position: 'absolute', left: 29.5, top: 0, bottom: 0, width: 3, backgroundColor: C.pinkDeep },
-  topicBadge: { width: 24, height: 24, borderRadius: 12, backgroundColor: C.cream, borderWidth: 2, borderColor: C.ink, alignItems: 'center', justifyContent: 'center', zIndex: 1 },
-  topicTitle: { fontFamily: F.medium, fontSize: 14, lineHeight: 19, color: C.ink },
-  topicMeta: { fontFamily: F.body, fontSize: 12, color: C.muted, marginTop: 1 },
-
-  // reading progress
-  readWrap: { width: '100%', maxWidth: 1360, alignSelf: 'center', paddingHorizontal: 24, paddingTop: 14 },
-  readBar: { flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: C.paper, borderWidth: 2.5, borderColor: C.ink, borderRadius: 18, paddingLeft: 10, paddingRight: 14, paddingTop: 20, paddingBottom: 9 },
-  readIcon: { width: 26, height: 26, borderRadius: 13, backgroundColor: C.cream, borderWidth: 2, borderColor: C.ink, alignItems: 'center', justifyContent: 'center' },
-  readLabelBox: { minWidth: 96 },
-  readLabel: { fontFamily: F.bold, fontSize: 13, color: C.ink },
-  readTrackWrap: { flex: 1, justifyContent: 'center', marginHorizontal: 12 },
-  readTrack: { height: 12, borderRadius: 7, borderWidth: 2.5, borderColor: C.ink, backgroundColor: C.pink, overflow: 'hidden' },
-  readFill: { height: '100%', backgroundColor: C.coral },
-  readMarker: { position: 'absolute', top: -27, marginLeft: -17 },
-  readPct: { fontFamily: F.display, fontSize: 15, color: C.ink, width: 50, textAlign: 'right' },
-
-  // document + dock + gate
-  mainBody: { padding: 24, maxWidth: 1360, width: '100%', alignSelf: 'center', paddingBottom: 60 },
-  contentCard: { backgroundColor: '#FFFFFF', borderWidth: 3, borderColor: C.ink, borderRadius: 24, padding: 28, minHeight: 320, marginBottom: 20 },
-  prose: { fontFamily: F.body, fontSize: 17, lineHeight: 29, color: C.ink, maxWidth: 880 },
-  blockTitle: { fontFamily: F.display, fontSize: 20, color: C.ink, marginBottom: 10 },
-  bulletRow: { flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: C.paper, borderWidth: 2, borderColor: C.ink, borderRadius: 16, padding: 12, marginBottom: 10 },
-  bulletBadge: { width: 30, height: 30, borderRadius: 15, borderWidth: 2, borderColor: C.ink, alignItems: 'center', justifyContent: 'center' },
-  bulletNum: { fontFamily: F.display, fontSize: 14, color: C.ink },
-  bulletText: { flex: 1, fontFamily: F.medium, fontSize: 15, lineHeight: 21, color: C.ink },
-
-  dock: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: 14, backgroundColor: C.paper, borderWidth: 3, borderColor: C.ink, borderRadius: 22, paddingHorizontal: 18, paddingVertical: 14 },
-  dockInfo: { flexDirection: 'row', alignItems: 'center', gap: 12, flex: 1, minWidth: 220 },
-  dockPin: { width: 34, height: 34, borderRadius: 10, backgroundColor: C.yellow, borderWidth: 2.5, borderColor: C.ink, alignItems: 'center', justifyContent: 'center', transform: [{ rotate: '-6deg' }] },
-  crumb: { fontFamily: F.bold, fontSize: 12, color: C.muted },
-  dockTitle: { fontFamily: F.display, fontSize: 20, lineHeight: 24, color: C.ink, marginTop: 1 },
-  tabRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 12 },
-  tabText: { fontFamily: F.bold, fontSize: 14, color: C.ink },
-
-  gate: { alignSelf: 'center', alignItems: 'center', width: '100%', maxWidth: 520, marginTop: 44, backgroundColor: C.cream, borderWidth: 3, borderColor: C.ink, borderRadius: 22, paddingHorizontal: 18, paddingTop: 10, paddingBottom: 16 },
-  gateMascot: { width: 84, height: 74 },
-  gateTitle: { fontFamily: F.display, fontSize: 20, color: C.ink, textAlign: 'center' },
-  gateDesc: { fontFamily: F.medium, fontSize: 14, lineHeight: 20, color: C.muted, marginTop: 2, textAlign: 'center', maxWidth: 400 },
-  gateBtns: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', gap: 12, marginTop: 12 },
+  // ─── NETACAD WORKSPACE STYLES ─────────────────────────────────
+  netacadTopBar: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    borderBottomWidth: 1,
+    borderBottomColor: '#E2E8F0',
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+  },
+  netacadTopLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    flex: 1,
+  },
+  backBtn: {
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 4,
+    borderWidth: 1,
+    borderColor: '#CBD5E1',
+    backgroundColor: '#FFFFFF',
+  },
+  backBtnText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#334155',
+  },
+  treeToggleBtn: {
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 4,
+    borderWidth: 1,
+    borderColor: '#C0392B',
+    backgroundColor: '#FDEDEC',
+  },
+  treeToggleBtnText: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#C0392B',
+  },
+  courseTag: {
+    backgroundColor: '#FDEDEC',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 4,
+  },
+  courseTagText: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#C0392B',
+  },
+  courseNameTop: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#1A252F',
+    flex: 1,
+  },
+  netacadProgressSection: {
+    width: 220,
+    marginLeft: 16,
+  },
+  progressLabels: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 4,
+  },
+  progressTrackerLabel: {
+    fontSize: 9,
+    fontWeight: '800',
+    color: '#64748B',
+    letterSpacing: 0.5,
+  },
+  progressTrackerPercent: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#C0392B',
+  },
+  progressTrack: {
+    height: 6,
+    backgroundColor: '#E2E8F0',
+    borderRadius: 3,
+    overflow: 'hidden',
+  },
+  progressFill: {
+    height: '100%',
+    backgroundColor: '#C0392B',
+  },
+  netacadWorkspace: {
+    flex: 1,
+    flexDirection: 'row',
+  },
+  netacadSidebar: {
+    width: 320,
+    backgroundColor: '#FFFFFF',
+    borderRightWidth: 1,
+    borderRightColor: '#E2E8F0',
+  },
+  sidebarHeader: {
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    borderBottomWidth: 1,
+    borderBottomColor: '#E2E8F0',
+  },
+  sidebarHeaderTitle: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#475569',
+    letterSpacing: 0.5,
+  },
+  sidebarHeaderSub: {
+    fontSize: 11,
+    color: '#94A3B8',
+    marginTop: 2,
+  },
+  sidebarScroll: {
+    flex: 1,
+  },
+  moduleBlock: {
+    borderBottomWidth: 1,
+    borderBottomColor: '#F1F5F9',
+  },
+  moduleHeaderRow: {
+    backgroundColor: '#F8F9FA',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: '#E2E8F0',
+  },
+  moduleTitleText: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: '#1E293B',
+    textTransform: 'uppercase',
+    letterSpacing: 0.3,
+  },
+  topicsTree: {
+    paddingVertical: 4,
+  },
+  topicItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderLeftWidth: 3,
+    borderLeftColor: 'transparent',
+  },
+  topicItemActive: {
+    backgroundColor: '#FEF2F2',
+    borderLeftColor: '#C0392B',
+  },
+  topicItemLocked: {
+    opacity: 0.6,
+  },
+  topicStatusIndicator: {
+    marginRight: 10,
+  },
+  indicatorCompleted: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    backgroundColor: '#E8F8F5',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  indicatorTextCompleted: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#27AE60',
+  },
+  indicatorLocked: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    backgroundColor: '#F1F5F9',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  indicatorTextLocked: {
+    fontSize: 10,
+  },
+  indicatorActive: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    backgroundColor: '#F1F5F9',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  indicatorCurrent: {
+    backgroundColor: '#FDEDEC',
+  },
+  indicatorTextActive: {
+    fontSize: 9,
+    fontWeight: '800',
+    color: '#C0392B',
+  },
+  topicItemTitle: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#334155',
+  },
+  topicItemTitleActive: {
+    color: '#C0392B',
+    fontWeight: '700',
+  },
+  topicItemTitleLocked: {
+    color: '#94A3B8',
+  },
+  topicMetaSub: {
+    fontSize: 10,
+    color: '#94A3B8',
+    marginTop: 2,
+  },
+  netacadMainViewport: {
+    flex: 1,
+    backgroundColor: '#F8F9FA',
+  },
+  contentScroll: {
+    flex: 1,
+  },
+  contentScrollBody: {
+    padding: 24,
+    maxWidth: 960,
+    alignSelf: 'center',
+    width: '100%',
+  },
+  topicHeroCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    overflow: 'hidden',
+    marginBottom: 16,
+  },
+  topicHeroMeta: {
+    padding: 20,
+    borderBottomWidth: 1,
+    borderBottomColor: '#E2E8F0',
+  },
+  activeModuleBreadcrumb: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#64748B',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  activeTopicTitle: {
+    fontSize: 20,
+    fontWeight: '800',
+    color: '#1A252F',
+    marginTop: 4,
+    letterSpacing: -0.3,
+  },
+  topicTabRow: {
+    flexDirection: 'row',
+    backgroundColor: '#F8F9FA',
+  },
+  topicTabBtn: {
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderBottomWidth: 2,
+    borderBottomColor: 'transparent',
+  },
+  topicTabBtnActive: {
+    borderBottomColor: '#C0392B',
+    backgroundColor: '#FFFFFF',
+  },
+  topicTabText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#64748B',
+  },
+  topicTabTextActive: {
+    color: '#C0392B',
+    fontWeight: '700',
+  },
+  contentBodyCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    padding: 24,
+    minHeight: 280,
+    marginBottom: 16,
+  },
+  proseContent: {
+    fontSize: 14,
+    lineHeight: 24,
+    color: '#334155',
+  },
+  emptyContentPad: {
+    padding: 30,
+    alignItems: 'center',
+  },
+  emptyContentText: {
+    fontSize: 13,
+    color: '#94A3B8',
+    fontStyle: 'italic',
+  },
+  s3PresentationCard: {
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    borderRadius: 8,
+    padding: 20,
+    backgroundColor: '#FAFAFA',
+  },
+  s3PresentationInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 16,
+    marginBottom: 16,
+  },
+  s3BadgeSquare: {
+    width: 44,
+    height: 44,
+    borderRadius: 6,
+    backgroundColor: '#C0392B',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  s3BadgeSquareText: {
+    fontSize: 13,
+    fontWeight: '900',
+    color: '#FFFFFF',
+  },
+  presentationName: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#1A252F',
+  },
+  presentationStorageStatus: {
+    fontSize: 11,
+    color: '#27AE60',
+    fontWeight: '600',
+    marginTop: 2,
+  },
+  presentationSize: {
+    fontSize: 11,
+    color: '#64748B',
+    marginTop: 2,
+  },
+  downloadSlideBtn: {
+    backgroundColor: '#1A252F',
+    paddingVertical: 10,
+    borderRadius: 6,
+    alignItems: 'center',
+  },
+  downloadSlideBtnText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#FFFFFF',
+  },
+  summaryBlock: {
+    marginBottom: 16,
+  },
+  summaryTitle: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: '#1E293B',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+    marginBottom: 8,
+  },
+  summaryParagraph: {
+    fontSize: 13,
+    lineHeight: 22,
+    color: '#475569',
+  },
+  bulletItem: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 8,
+    marginBottom: 8,
+  },
+  bulletDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: '#C0392B',
+    marginTop: 7,
+  },
+  bulletText: {
+    fontSize: 13,
+    lineHeight: 20,
+    color: '#334155',
+    flex: 1,
+  },
+  masteryGateCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#CBD5E1',
+    padding: 20,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 16,
+    flexWrap: 'wrap',
+  },
+  masteryStatusInfo: {
+    flex: 1,
+    minWidth: 260,
+  },
+  masteryGateTitle: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#475569',
+    letterSpacing: 0.5,
+  },
+  masteryGateDesc: {
+    fontSize: 12,
+    color: '#64748B',
+    marginTop: 4,
+    lineHeight: 18,
+  },
+  masteryActionButtons: {
+    flexDirection: 'row',
+    gap: 10,
+    alignItems: 'center',
+  },
+  noTopicSelected: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 40,
+  },
+  noTopicTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#1A252F',
+  },
+  noTopicSub: {
+    fontSize: 12,
+    color: '#94A3B8',
+    marginTop: 4,
+  },
 });
